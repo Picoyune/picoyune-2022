@@ -16,5 +16,11 @@
   .card {
     @apply bg-white border border-black p-8 flex flex-col gap-4 items-center rounded-lg;
   }
+  #form {
+    display: block;
+    position: relative;
+    top: -150px;
+    visibility: hidden;
+  }
 }
 

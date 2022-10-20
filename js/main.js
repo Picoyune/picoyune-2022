@@ -23,19 +23,38 @@ $(document).ready(function(){
 
 });
 
+
 // Get all elements with parallax class
 const parallax = document.getElementsByClassName('parallax');
 // The extent to which they are start lower than normal
-const offset = 100
+const offset = 40
 // Go through them all
 for(let i = 0; i < parallax.length; i++) {
   // Set the offset
-  parallax[i].style.bottom = '-' + offset + 'px';
+  parallax[i].style.top = '-' + offset + 'px';
   // Assign a listener
   window.addEventListener('scroll', (e) => {
     // calculate how much to move per scroll 
-    var shift = ((window.scrollY / 12) - offset) + 'px';
+    var shift = ((window.scrollY / 15) - offset) + 'px';
     // Shift the image up that amount
-    parallax[i].style.bottom = shift;
+    parallax[i].style.top = shift;
   })
 }
+
+//  Header stuff
+window.addEventListener('scroll', (e) => {
+  if(window.scrollY > 70) {
+    // console.log(document.getElementsByClassName('js-header').classList)
+    document.getElementsByClassName('js-header')[0].classList.add('fixed', 'top-0', 'px-8', 'py-4', 'shadow-sm');
+    document.getElementsByClassName('js-header')[0].classList.remove('p-8');
+    document.getElementById('header-logo').classList.remove('w-60');
+    document.getElementById('header-logo').classList.add('w-40');
+    document.getElementById('header-placeholder').classList.remove('hidden');
+  } else {
+    document.getElementsByClassName('js-header')[0].classList.remove('fixed', 'top-0', 'px-8', 'py-4', 'shadow-sm');
+    document.getElementsByClassName('js-header')[0].classList.add('p-8');
+    document.getElementById('header-logo').classList.add('w-60');
+    document.getElementById('header-logo').classList.remove('w-40');
+    document.getElementById('header-placeholder').classList.add('hidden');    
+  }
+})

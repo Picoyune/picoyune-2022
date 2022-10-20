@@ -10,9 +10,9 @@
 </head>
 </head>
 <body>
-  <header class="site-header js-header flex justify-between mx-auto p-8 items-center max-w-7xl">
-    <a href="./">
-      <svg class="w-64" viewBox="0 0 478 131" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <header class="site-header js-header flex justify-between mx-auto p-8 items-center w-full bg-white z-50 transition ease-in-out delay-50">
+    <a id="header-logo" class="w-64" href="./">
+      <svg  viewBox="0 0 478 131" fill="none" xmlns="http://www.w3.org/2000/svg">
         <g clip-path="url(#clip0_287_21)">
         <path d="M95.6336 39.0613C95.6336 36.4427 93.7849 33.2293 91.5248 31.92L51.9259 8.98198C49.6657 7.67267 45.9673 7.67267 43.7072 8.98198L4.10933 31.92C1.8492 33.2293 0 36.4427 0 39.0613V84.9372C0 87.5558 1.8492 90.7697 4.10933 92.0785L17.1945 99.6588V48.3672C17.1945 46.0226 18.8498 43.1455 20.8734 41.9735L44.2294 28.4441C46.253 27.272 49.5635 27.272 51.5871 28.4441L74.9431 41.9735C76.9667 43.1455 78.622 46.0226 78.622 48.3672V75.4261C78.622 77.7702 76.9667 80.6473 74.9431 81.8193L51.5871 95.3488C49.5635 96.5208 46.2525 96.5208 44.2294 95.3488L34.1866 89.5313V109.502L43.7072 115.018C45.9673 116.327 49.6657 116.327 51.9259 115.018L91.5248 92.0795C93.7849 90.7702 95.6336 87.5568 95.6336 84.9382V39.0613Z" fill="black"/>
         <path d="M35.4802 70.8507L46.1381 76.8615C47.0615 77.382 48.5725 77.382 49.4954 76.8615L60.1534 70.8507C61.0768 70.3302 61.8318 69.0518 61.8318 68.0103V55.9892C61.8318 54.9477 61.0763 53.6697 60.1534 53.1493L49.4954 47.1384C48.5725 46.618 47.0615 46.618 46.1381 47.1384L35.4802 53.1493C34.5568 53.6697 33.8013 54.9477 33.8013 55.9892V68.0118C33.8018 69.0528 34.5568 70.3302 35.4802 70.8507Z" fill="black"/>
@@ -28,26 +28,28 @@
       </svg>
     </a>
     <div>
-      <ul class="flex flex-row gap-8 uppercase items-center text-xl">
+      <ul class="flex flex-row gap-8 uppercase items-center">
         <li class="hover:underline cursor-pointer"><a href="about">About</a></li>
-        <li class="btn-primary"><a href="pico-1">Order</a></li>
+        <li class="btn-primary"><a href="#form">Request a quote</a></li>
       </ul>
     </div>
   </header>
-  <main class="mt-24 flex flex-col items-center">
-    <div class="content-container mb-32">
-      <div class="w-3/5">
-        <h1 class="text-6xl font-bold leading-tight">Introducing the MA-1, the future of portable mercury analysis.</h1>
-        <div class="text-2xl pt-8">Track exposure all day, notify workers in real-time, and take action.</div>
-        <span class="btn-primary mt-8">
+  <div id="header-placeholder" class="p-16 hidden"></div>
+  <main class="mt-16 md:mt-64 flex flex-col items-center">
+    <div class="content-container gap-16 mb-32 flex-col-reverse md:flex-row">
+      <div class="w-full md:w-3/5">
+        <h1 class="text-4xl md:text-6xl font-bold leading-tight">Introducing the MA-1, the future of portable mercury analysis.</h1>
+        <div class="text-3xl pt-8 leading-relaxed">Track exposure all day, notify workers in real-time, and take action.</div>
+        <a class="btn-primary mt-8 text-2xl" href="#form">
           Request a quote
-        </span>       
-        <div class="w-full pt-16">
+        </a>       
+        <div class="w-full pt-16 flex gap-6">
           <a class="text-blue-500 underline text-lg" href="#product-details">Product Specifications</a>     
+          <a class="text-blue-500 underline text-lg" href="#documentation">Documentation</a>     
         </div>
       </div>
-      <div  class="w-2/5">
-        <img id="spinner1" class="w-3/5 relative mx-auto parallax" src="images/pico-front-render-transparent.png" />
+      <div  class="w-full md:w-2/5">
+        <img id="spinner1" class=" relative mx-auto parallax w-48 md:w-2/3" src="images/pico-front-render-transparent.png" />
         <!-- <img id="spinner2" class="w-3/5 relative mx-auto hidden" src="images/pico-side-render-transparent.png" /> -->
         <!-- <img id="spinner3" class="w-3/5 relative mx-auto hidden" src="images/pico-back-render-transparent.png" /> -->
       </div>
@@ -55,37 +57,37 @@
     <div class="w-full">
       <img class="w-full" src="images/big-image.jpg" />
     </div>     
-    <div class="content-container mt-32 gap-8 items-center">
-      <div class="w-1/2">
+    <div class="content-container mt-32 gap-16 items-start flex-col-reverse md:flex-row">
+      <div class="w-full md:w-1/2 mt-24">
         <h2 class="text-3xl font-semibold">Designed for work safety —</h2>
-        <p class="mt-8">
+        <p class="mt-8 leading-8">
           Mercury vapor is a potent neurotoxin that occurs naturally in our environment. Occupational mercury hazards are highly variable and depend on the location and type of work being conducted. Industrial processes can concentrate mercury, posing a heightened risk to workers.           
         </p>
-        <p class="mt-8">
+        <p class="mt-8 leading-8">
           The MA-1 protects workers by identifying mercury levels in the breathing zone and guides decisions without getting in the way. Continuous and live readings allow immediate response to hazards, while the data logging can track workers’ exposure across their entire shift.            
         </p>
-        <p class="mt-8">
+        <p class="mt-8 leading-8">
           The design of the MA-1 is robust and radically more portable than all other mercury monitors. Operating the MA-1 is simple. Once it’s turned-on and clipped-on the MA-1 operates automatically without any input needed.
         </p>              
       </div>
-      <div class="w-1/2">
+      <div class="w-full md:w-1/2">
         <img class="w-full relative parallax" src="images/pico-1-glove.jpg" />
       </div>
     </div>
-    <div class="content-container mt-24 gap-8 container-border items-center">
-      <div class="w-1/2">
-        <img class="w-full relative parallax" src="images/pico-render-cradle.jpg" />
+    <div class="content-container mt-8 md:mt-24 mb-12 md:mb-48 gap-16 items-center flex-col md:flex-row">
+      <div class="w-full md:w-1/2">
+        <img class="w-full parallax" src="images/pico-render-cradle.jpg" />
       </div>      
-      <div class="w-1/2">
+      <div class="w-full md:w-1/2">
         <h2 class="text-3xl font-semibold">Proprietary Plasmonic Sensors —</h2>
-        <p class="mt-8">
+        <p class="mt-8 leading-8">
           Picoyune’s proprietary plasmonic sensor technology is sensitive and selective. Have confidence in the MA-1, which is not cross-sensitive to hydrocarbons (BTEX, VOC, etc.) which cause significant false readings in the incumbent UV spectroscopic methods. The MA-1 covers the entire range of hazardous mercury levels; it is sensitive to parts per billion concentrations and quantitative above the IDLH limit (10,000 µg/m3).
         </p>
       </div>
     </div>
-    <div class="content-container bg-gray-800 flex-col items-start p-16">
+    <div class="content-container bg-gray-800 flex-col items-start p-16 ">
       <h3 class="text-4xl font-bold mb-16 text-white">Applications —</h3>
-      <div class="grid gap-8 grid-cols-3 w-full">
+      <div class="grid gap-8 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 w-full">
         <div class="card">
           <img class="w-32" src="images/icon-oil.jpg" />
           <p class="text-center text-xl">
@@ -112,34 +114,38 @@
         </div>        
       </div>   
     </div>      
-    <div class="content-container mt-24 container-border gap-8">
-      <div class="w-1/2">
+    <div class="content-container mt-32 container-border flex-col-reverse md:flex-row gap-8">
+      <div  class="w-full md:w-1/2">
+        <div id="form"></div>
         <div class="border border-black rounded-sm">
           <div class="border-b border-black p-3">
-            <h4>Request a quote</h4>
+            <h4  class="font-bold uppercase">Request a quote</h4>
           </div>    
           <div class="p-3">
+            <p class="py-6 leading-8">
+              To request a quote, please submit the following form. You will be contacted by our team.              
+            </p>
             <form class="flex flex-col gap-4" name="contact" method="POST" data-netlify="true">
               <p>
-                <label>Your Name: <input class="border border-black" type="text" name="name" /></label>
+                <label ><span class="font-bold">Organization Name</span> <br /><input class="w-full border border-black h-12 p-2" type="text" name="name" /></label>
               </p>
               <p>
-                <label>Your Email: <input class="border border-black" type="email" name="email" /></label>
+                <label ><span class="font-bold">Your Email</span> <br /><input class="w-full border border-black h-12 p-2" type="email" name="email" /></label>
               </p>
               <p>
-                <label>Message: <textarea class="border border-black" name="message"></textarea></label>
+                <label ><span class="font-bold">Message</span> <br /><textarea class="w-full border border-black h-24 p-2" name="message"></textarea></label>
               </p>
-              <p>
-                <button type="submit">Send</button>
+              <p class="text-center my-6">
+                <button class="btn-primary" type="submit">Submit</button>
               </p>
             </form>
           </div>      
-          <div class="border-t border-black p-3">
-            blah lbah
+          <div class="border-t border-black p-3 leading-8">
+            You may also contact us directly at jay@picoyune.com for additional inquiries.
           </div>
         </div>
       </div>      
-      <div class="w-1/2">
+      <div class="w-full md:w-1/2">
         <div class="product-image w-full">
           <img class="pb-4" src="images/pico-render-front.jpg" />
           <img class="pb-4" src="images/pico-render-side.jpg" />
@@ -156,8 +162,8 @@
     </div>  
     <div class="content-container mt-24 gap-8 flex-col">
       <h3 class="text-4xl font-bold mb-16" id="product-details">Product Details —</h3>
-      <div class="flex gap-12">
-        <div class="w-1/2">
+      <div class="flex flex-col-reverse md:flex-row gap-24">
+        <div class="w-full md:w-3/5">
           <div class="border border-black rounded">
             <div class="p-3 uppercase font-bold">MA-1 Product Specifications</div>
             <table class="w-full">
@@ -254,7 +260,7 @@
                   Selectivity
                 </td>
                 <td>
-                  no interference from VOC, humidity (non-condensing), CO2, O2, SO2, NOx, 
+                  no interference from VOC, humidity (non-condensing), CO2, O2, SO2, NOx
                 </td>
               </tr> 
               <tr class="border-t border-black">
@@ -306,7 +312,7 @@
                 </td>
               </tr>                        
             </table>
-            <div class="border-t border-black p-3">
+            <div class="border-t border-black p-3 leading-8">
               Includes: monitor, particulate filters (4x), base station for charging and data downloading, case, and software to connect the MA-1 to a PC.
               <br /><br />
               1 year limited warranty on the function of the device.
@@ -314,10 +320,10 @@
             </div>
           </div>
         </div>
-        <div class="w-1/2">
-          <h4 class="uppercase font-bold mb-8">Documentation</h4>
-          <div>
-            <div class="flex gap-4 mb-8">
+        <div class="w-full md:w-2/5">
+          <h4 id="documentation" class="uppercase font-bold mb-8">Documentation</h4>
+          <div class="flex flex-col gap-6 divide-y divide-dashed">
+            <div class="flex gap-4 pt-4 items-center">
               <div>
                 <svg width="56" height="69" viewBox="0 0 56 69" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M34.75 3.25H9.75C8.0924 3.25 6.50268 3.90848 5.33058 5.08058C4.15848 6.25268 3.5 7.8424 3.5 9.5V59.5C3.5 62.9375 6.3125 65.75 9.75 65.75H47.25C48.9076 65.75 50.4973 65.0915 51.6694 63.9194C52.8415 62.7473 53.5 61.1576 53.5 59.5V22L34.75 3.25Z" stroke="black" stroke-width="2.6875" stroke-linecap="square"/>
@@ -329,7 +335,7 @@
                 <a class="text-blue-500 underline" href="">Download</a> 
               </div>
             </div>
-            <div class="flex gap-4 mb-8">
+            <div class="flex gap-4 pt-4 items-center">
               <div>
                 <svg width="56" height="69" viewBox="0 0 56 69" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M34.75 3.25H9.75C8.0924 3.25 6.50268 3.90848 5.33058 5.08058C4.15848 6.25268 3.5 7.8424 3.5 9.5V59.5C3.5 62.9375 6.3125 65.75 9.75 65.75H47.25C48.9076 65.75 50.4973 65.0915 51.6694 63.9194C52.8415 62.7473 53.5 61.1576 53.5 59.5V22L34.75 3.25Z" stroke="black" stroke-width="2.6875" stroke-linecap="square"/>
@@ -341,7 +347,7 @@
                 <a class="text-blue-500 underline" href="">Download</a> 
               </div>
             </div>
-            <div class="flex gap-4 mb-8">
+            <div class="flex gap-4 pt-4 items-center">
               <div>
                 <svg width="56" height="69" viewBox="0 0 56 69" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M34.75 3.25H9.75C8.0924 3.25 6.50268 3.90848 5.33058 5.08058C4.15848 6.25268 3.5 7.8424 3.5 9.5V59.5C3.5 62.9375 6.3125 65.75 9.75 65.75H47.25C48.9076 65.75 50.4973 65.0915 51.6694 63.9194C52.8415 62.7473 53.5 61.1576 53.5 59.5V22L34.75 3.25Z" stroke="black" stroke-width="2.6875" stroke-linecap="square"/>
@@ -353,7 +359,7 @@
                 <a class="text-blue-500 underline" href="">Download</a> 
               </div>
             </div>
-            <div class="flex gap-4 mb-8">
+            <div class="flex gap-4 pt-4 items-center">
               <div>
                 <svg width="56" height="69" viewBox="0 0 56 69" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M34.75 3.25H9.75C8.0924 3.25 6.50268 3.90848 5.33058 5.08058C4.15848 6.25268 3.5 7.8424 3.5 9.5V59.5C3.5 62.9375 6.3125 65.75 9.75 65.75H47.25C48.9076 65.75 50.4973 65.0915 51.6694 63.9194C52.8415 62.7473 53.5 61.1576 53.5 59.5V22L34.75 3.25Z" stroke="black" stroke-width="2.6875" stroke-linecap="square"/>
@@ -370,8 +376,16 @@
       </div>    
     </div>
     <div class="w-full py-32 bg-gray-800 text-white">
-      <div class="max-w-7xl px-24 flex items-center justify-between mx-auto">
-        <div class="w-1/2">
+      <div class="content-container mx-auto gap-16 flex-col-reverse md:flex-row">
+     
+        <div class="w-full md:w-1/2">
+          <h3 class="mb-4 text-3xl">Innovative mercury analysis, more places, less effort</h3>
+          <p class="mb-8 text-xl">Picoyune replaces complex equipment with reliable, portable, and easy to use devices.</p>
+          <span class="btn-primary">
+            Learn More About Picoyune
+          </span>        
+        </div>
+        <div class="w-full md:w-1/2">
           <svg class="w-64 mx-auto" viewBox="0 0 500 358" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M349.854 99.2321C349.854 94.0241 346.165 87.6331 341.655 85.0291L262.637 39.4091C258.127 36.8051 250.747 36.8051 246.237 39.4091L167.221 85.0291C162.711 87.6331 159.021 94.0241 159.021 99.2321V190.472C159.021 195.68 162.711 202.072 167.221 204.675L193.332 219.751V117.74C193.332 113.077 196.635 107.355 200.673 105.024L247.279 78.1161C251.317 75.7851 257.923 75.7851 261.961 78.1161L308.567 105.024C312.605 107.355 315.908 113.077 315.908 117.74V171.556C315.908 176.218 312.605 181.94 308.567 184.271L261.961 211.179C257.923 213.51 251.316 213.51 247.279 211.179L227.239 199.609V239.328L246.237 250.298C250.747 252.902 258.127 252.902 262.637 250.298L341.655 204.677C346.165 202.073 349.854 195.682 349.854 190.474V99.2321V99.2321Z" fill="white"/>
             <path d="M230.519 162.349L251.341 174.371C253.145 175.412 256.097 175.412 257.9 174.371L278.722 162.349C280.526 161.308 282.001 158.751 282.001 156.668V132.625C282.001 130.542 280.525 127.986 278.722 126.945L257.9 114.923C256.097 113.882 253.145 113.882 251.341 114.923L230.519 126.945C228.715 127.986 227.239 130.542 227.239 132.625V156.671C227.24 158.753 228.715 161.308 230.519 162.349" fill="white"/>
@@ -384,14 +398,7 @@
             <path d="M377.39 313.22L354.033 277.71H348.677V319.942H353.141L353.104 284.562L376.388 319.942H381.781V277.71H377.354L377.39 313.22Z" fill="white"/>
             <path d="M407.686 315.807V300.722H425.794V296.585H407.686V281.847H428.474V277.71H403.021V319.942H429.021V315.807H407.686Z" fill="white"/>
             </svg>
-        </div>      
-        <div class="w-1/2">
-          <h3 class="mb-4 text-3xl">Innovative mercury analysis, more places, less effort</h3>
-          <p class="mb-8 text-xl">Picoyune replaces complex equipment with reliable, portable, and easy to use devices.</p>
-          <span class="btn-primary">
-            Learn More
-          </span>        
-        </div>
+        </div>         
       </div>
 
     </div>
@@ -402,15 +409,12 @@
     </div>     -->
   </main>
   <footer class="bg-gray-900 text-white py-16">
-    <div class="max-w-7xl pb-16 px-8 flex gap-32 items-center mx-auto">
-      <div class="w-1/2">
+    <div class="content-container mx-auto flex-col-reverse md:flex-row gap-16">
+      <div class="w-full md:w-1/2">
         <div class="flex gap-16">
-          <span>
-            <img src="images/small-white-logo.png">
-          </span>
           
           <span>
-            <strong>PICOYUNE</strong>
+            <strong class="text-xl">PICOYUNE</strong>
             <p>
               950 Gilman St, Suite 105 <br />
               Berkeley, CA 94710            
@@ -419,7 +423,7 @@
         </div>      
       </div>
 
-      <div class="w-1/2">
+      <div class="w-full md:w-1/2">
        
           <strong>NEWSLETTER</strong>
           <p>
