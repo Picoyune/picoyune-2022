@@ -5,6 +5,16 @@
 
 @layer components {
   .btn-primary {
-    @apply cursor-pointer uppercase py-2 px-4 bg-blue-500 text-white rounded-sm shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-75;
+    @apply inline-block cursor-pointer uppercase py-2 px-4 bg-blue-500 text-white rounded-sm shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-75;
+  }
+  .content-container {
+    @apply w-full max-w-7xl pb-16 px-8 flex justify-between;
+  }
+  .container-border {
+    @apply border-b border-dotted border-gray-100;
+  }
+  .card {
+    @apply bg-white border border-black p-8 flex flex-col gap-4 items-center rounded-lg;
   }
 }
+

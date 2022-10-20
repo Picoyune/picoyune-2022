@@ -8,6 +8,7 @@
   <title>Picoyune</title>
 
 </head>
+</head>
 <body>
   <header class="site-header js-header flex justify-between mx-auto p-8 items-center max-w-7xl">
     <a href="./">
@@ -33,89 +34,270 @@
       </ul>
     </div>
   </header>
-  <main class="mt-8 flex flex-col items-center">
-    <div class="max-w-7xl pb-16 px-8 flex items-center justify-between border-b border-dotted border-gray-100">
-      <div class="w-1/2">
-        <h2 class="mb-4 text-3xl">Pico-1</h2>
-        <p class="mb-8 text-xl">Innovative mercury analysis, more places, less effort. The PICO-1 is Picoyune's state of the art handheld mercury analysis device.</p>
-        <span class="btn-primary">
-          Order now
-        </span>        
+  <main class="mt-24 flex flex-col items-center">
+    <div class="content-container mb-32">
+      <div class="w-3/5">
+        <h1 class="text-6xl font-bold leading-tight">Introducing the MA-1, the future of portable mercury analysis.</h1>
+        <div class="text-2xl pt-8">Track exposure all day, notify workers in real-time, and take action.</div>
+        <span class="btn-primary mt-8">
+          Request a quote
+        </span>       
+        <div class="w-full pt-16">
+          <a class="text-blue-500 underline text-lg" href="#product-details">Product Specifications</a>     
+        </div>
       </div>
-      <div>
-        <img src="images/pico-1-glove.jpg" />
+      <div  class="w-2/5">
+        <img id="spinner1" class="w-3/5 relative mx-auto parallax" src="images/pico-front-render-transparent.png" />
+        <!-- <img id="spinner2" class="w-3/5 relative mx-auto hidden" src="images/pico-side-render-transparent.png" /> -->
+        <!-- <img id="spinner3" class="w-3/5 relative mx-auto hidden" src="images/pico-back-render-transparent.png" /> -->
       </div>
-    </div>
-    <div class="max-w-7xl w-full pb-16 p-8 text-center">
-      <h2 class="text-2xl uppercase py-8">Features</h2>
-      <div class="grid gap-8 grid-cols-3 mb-16">
-        <div class="border border-gray-200 p-4 flex flex-col gap-4 items-center rounded-lg">
-          <img src="images/hygrometer-icon.png" />
-          <p class="text-center text-xl">
-            Direct measurement with plasmonic sensor
-          </p>
-        </div>
-        <div class="border border-gray-200 p-8 flex flex-col gap-4 items-center rounded-lg">
-          <img src="images/handheld-icon.png" />
-          <p class="text-center text-xl">
-            Handheld device with a straightforward user interface
-          </p>
-        </div>
-        <div class="border border-gray-200 p-8 flex flex-col gap-4 items-center rounded-lg">
-          <img src="images/molecule-icon.png" />
-          <p class="text-center text-xl">
-            No interference from hydrocarbons, water vapor, CO2, NOX, SO2, H2S, and more
-          </p>
-        </div>
-        <div class="border border-gray-200 p-8 flex flex-col gap-4 items-center rounded-lg">
-          <img src="images/molecule-icon.png" />
-          <p class="text-center text-xl">
-            No interference from hydrocarbons, water vapor, CO2, NOX, SO2, H2S, and more
-          </p>
-        </div>        
-        <div class="border border-gray-200 p-8 flex flex-col gap-4 items-center rounded-lg">
-          <img src="images/hygrometer-icon.png" />
-          <p class="text-center text-xl">
-            Direct measurement with plasmonic sensor
-          </p>
-        </div>
-        <div class="border border-gray-200 p-8 flex flex-col gap-4 items-center rounded-lg">
-          <img src="images/handheld-icon.png" />
-          <p class="text-center text-xl">
-            Handheld device with a straightforward user interface
-          </p>
-        </div>
-      </div>  
-      <span class="mt-16 btn-primary">Learn More</span>    
     </div>
     <div class="w-full">
       <img class="w-full" src="images/big-image.jpg" />
-    </div>    
-    <div class="max-w-7xl w-full p-8 pb-32 text-center border-b border-gray-100">
-      <h2 class="text-2xl uppercase py-8">Applications</h2>
-      <div class="grid gap-8 grid-cols-3 mb-16 ">
-        <div class="border border-gray-200 p-8 flex flex-col gap-4 items-center rounded-lg">
-          <img src="images/oil-icon.png" />
+    </div>     
+    <div class="content-container mt-32 gap-8 items-center">
+      <div class="w-1/2">
+        <h2 class="text-3xl font-semibold">Designed for work safety —</h2>
+        <p class="mt-8">
+          Mercury vapor is a potent neurotoxin that occurs naturally in our environment. Occupational mercury hazards are highly variable and depend on the location and type of work being conducted. Industrial processes can concentrate mercury, posing a heightened risk to workers.           
+        </p>
+        <p class="mt-8">
+          The MA-1 protects workers by identifying mercury levels in the breathing zone and guides decisions without getting in the way. Continuous and live readings allow immediate response to hazards, while the data logging can track workers’ exposure across their entire shift.            
+        </p>
+        <p class="mt-8">
+          The design of the MA-1 is robust and radically more portable than all other mercury monitors. Operating the MA-1 is simple. Once it’s turned-on and clipped-on the MA-1 operates automatically without any input needed.
+        </p>              
+      </div>
+      <div class="w-1/2">
+        <img class="w-full relative parallax" src="images/pico-1-glove.jpg" />
+      </div>
+    </div>
+    <div class="content-container mt-24 gap-8 container-border items-center">
+      <div class="w-1/2">
+        <img class="w-full relative parallax" src="images/pico-render-cradle.jpg" />
+      </div>      
+      <div class="w-1/2">
+        <h2 class="text-3xl font-semibold">Proprietary Plasmonic Sensors —</h2>
+        <p class="mt-8">
+          Picoyune’s proprietary plasmonic sensor technology is sensitive and selective. Have confidence in the MA-1, which is not cross-sensitive to hydrocarbons (BTEX, VOC, etc.) which cause significant false readings in the incumbent UV spectroscopic methods. The MA-1 covers the entire range of hazardous mercury levels; it is sensitive to parts per billion concentrations and quantitative above the IDLH limit (10,000 µg/m3).
+        </p>
+      </div>
+    </div>
+    <div class="content-container bg-gray-800 flex-col items-start p-16">
+      <h3 class="text-4xl font-bold mb-16 text-white">Applications —</h3>
+      <div class="grid gap-8 grid-cols-3 w-full">
+        <div class="card">
+          <img class="w-32" src="images/icon-oil.jpg" />
           <p class="text-center text-xl">
             Oil and Gas
           </p>
         </div>
-        <div class="border border-gray-200 p-8 flex flex-col gap-4 items-center rounded-lg">
-          <img src="images/hygiene-icon.png" />
+        <div class="card">
+          <img class="w-32" src="images/icon-hygiene.jpg" />
           <p class="text-center text-xl">
             Industrial Hygiene
           </p>
         </div>
-        <div class="border border-gray-200 p-8 flex flex-col gap-4 items-center rounded-lg">
-          <img src="images/air-icon.png" />
+        <div class="card">
+          <img class="w-32" src="images/icon-air.jpg" />
           <p class="text-center text-xl">
             Air Quality
           </p>
         </div>
+        <div class="card">
+          <img class="w-32" src="images/icon-mining.jpg" />
+          <p class="text-center text-xl">
+            Mining
+          </p>
+        </div>        
       </div>   
-      <span class="mt-16 btn-primary">Learn More</span>
-    </div>    
-
+    </div>      
+    <div class="content-container mt-24 container-border gap-8">
+      <div class="w-1/2">
+        <div class="border border-black">
+          A FORM GOES HERE
+        </div>
+      </div>      
+      <div class="w-1/2">
+        <div class="product-image w-full">
+          <img class="pb-4" src="images/pico-render-front.jpg" />
+          <img class="pb-4" src="images/pico-render-side.jpg" />
+          <img class="pb-4" src="images/pico-render-back.jpg" />
+          <img class="pb-4" src="images/pico-render-cradle.jpg" />          
+        </div>
+        <div class="slider-nav relative w-full">
+          <img class="p-4" src="images/pico-render-front.jpg" />
+          <img class="p-4" src="images/pico-render-side.jpg" />
+          <img class="p-4" src="images/pico-render-back.jpg" />
+          <img class="p-4" src="images/pico-render-cradle.jpg" />
+        </div>          
+      </div>
+    </div>  
+    <div class="content-container mt-24 gap-8 flex-col">
+      <h3 class="text-4xl font-bold mb-16" id="product-details">Product Details —</h3>
+      <div class="flex gap-8">
+        <div class="w-1/2">
+          <div class="border border-black rounded">
+            <div class="p-3 uppercase">MA-1 Product Specifications</div>
+            <table class="w-full">
+              <tr class="border-t border-black">
+                <td class="font-bold p-3">
+                  Applications
+                </td>
+                <td>
+                  occupational, environmental, safety
+                </td>
+              </tr>
+              <tr class="border-t border-black">
+                <td class="font-bold p-3">
+                  Detection method
+                </td>
+                <td>
+                  plasmonic
+                </td>
+              </tr>
+              <tr class="border-t border-black">
+                <td class="font-bold p-3">
+                  Calibrated range
+                </td>
+                <td>
+                  0 to 10,000 µg/m3
+                </td>
+              </tr>
+              <tr class="border-t border-black">
+                <td class="font-bold p-3">
+                  LOD in ideal conditions
+                </td>
+                <td>
+                  1 µg/m3
+                </td>
+              </tr> 
+              <tr class="border-t border-black">
+                <td class="font-bold p-3">
+                  LOD in typical conditions
+                </td>
+                <td>
+                  5 µg/m3
+                </td>
+              </tr> 
+              <tr class="border-t border-black">
+                <td class="font-bold p-3">
+                  Sample frequency
+                </td>
+                <td>
+                  1/minute
+                </td>
+              </tr> 
+              <tr class="border-t border-black">
+                <td class="font-bold p-3">
+                  Zero correction
+                </td>
+                <td>
+                  automatic
+                </td>
+              </tr> 
+              <tr class="border-t border-black">
+                <td class="font-bold p-3">
+                  Battery life
+                </td>
+                <td>
+                  14 hours
+                </td>
+              </tr> 
+              <tr class="border-t border-black">
+                <td class="font-bold p-3">
+                  Battery
+                </td>
+                <td>
+                  UN38.3
+                </td>
+              </tr> 
+              <tr class="border-t border-black">
+                <td class="font-bold p-3">
+                  Recalibration method
+                </td>
+                <td>
+                  factory
+                </td>
+              </tr> 
+              <tr class="border-t border-black">
+                <td class="font-bold p-3">
+                  Filter
+                </td>
+                <td>
+                  replaceable particulate filter
+                </td>
+              </tr> 
+              <tr class="border-t border-black">
+                <td class="font-bold p-3">
+                  Selectivity
+                </td>
+                <td>
+                  no interference from VOC, humidity (non-condensing), CO2, O2, SO2, NOx, 
+                </td>
+              </tr> 
+              <tr class="border-t border-black">
+                <td class="font-bold p-3">
+                  Alarm
+                </td>
+                <td>
+                  audible 85dB, visual, haptic
+                </td>
+              </tr> 
+              <tr class="border-t border-black">
+                <td class="font-bold p-3">
+                  Alarm level
+                </td>
+                <td>
+                  high and low alarm, user set
+                </td>
+              </tr>  
+              <tr class="border-t border-black">
+                <td class="font-bold p-3">
+                  Size
+                </td>
+                <td>
+                  150x65x30 mm
+                </td>
+              </tr> 
+              <tr class="border-t border-black">
+                <td class="font-bold p-3">
+                  Weight
+                </td>
+                <td>
+                  280 grams
+                </td>
+              </tr> 
+              <tr class="border-t border-black">
+                <td class="font-bold p-3">
+                  Data storage
+                </td>
+                <td>
+                  6 months of data on device
+                </td>
+              </tr> 
+              <tr class="border-t border-black">
+                <td class="font-bold p-3">
+                  Data transfer
+                </td>
+                <td>
+                  USB transfer to PC
+                </td>
+              </tr>                        
+            </table>
+            <div class="border-t border-black p-3">
+              Includes: monitor, particulate filters (4x), base station for charging and data downloading, case, and software to connect the MA-1 to a PC.
+              <br /><br />
+              1 year limited warranty on the function of the device.
+              
+            </div>
+          </div>
+        </div>
+        <div class="w-1/2">
+          Documents
+        </div>
+      </div>    
+    </div>
     <div class="w-full py-32 bg-gray-800 text-white">
       <div class="max-w-7xl px-24 flex items-center justify-between mx-auto">
         <div class="w-1/2">
@@ -142,11 +324,11 @@
       </div>
 
     </div>
-    <div class="max-w-7xl w-full pb-16 px-8 mt-16 flex items-center justify-around border-b border-gray-100 ">
+    <!-- <div class="max-w-7xl w-full pb-16 px-8 mt-16 flex items-center justify-around border-b border-gray-100 ">
       <img src="images/logo-nih.png" />
       <img src="images/logo-nsf.png" />
       <img src="images/logo-srp.png" />
-    </div>    
+    </div>     -->
   </main>
   <footer class="bg-gray-900 text-white py-16">
     <div class="max-w-7xl pb-16 px-8 flex gap-32 items-center mx-auto">
@@ -188,4 +370,7 @@
       </div>
     </div>
   </footer>
+  <script type="text/javascript" src="js/jquery-3.6.1.min.js"></script>
+  <script type="text/javascript" src="js/slick.min.js"></script>
+  <script type="text/javascript" src="js/main.js"></script>  
 </body>
