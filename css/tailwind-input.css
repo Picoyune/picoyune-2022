@@ -11,7 +11,7 @@
     @apply inline-block cursor-pointer uppercase py-2 px-4 text-blue-500 rounded-sm shadow-sm outline outline-2 hover:bg-blue-100;
   }
   .content-container {
-    @apply w-full max-w-7xl pb-16 px-8 flex justify-between;
+    @apply w-full max-w-7xl pb-16 px-4 md:px-8 flex justify-between;
   }
   .container-border {
     @apply border-b border-dotted border-gray-100;
