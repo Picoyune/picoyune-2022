@@ -1045,6 +1045,11 @@ video {
   padding-bottom: 0.5rem;
 }
 
+.px-3 {
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
 .pt-8 {
   padding-top: 2rem;
 }
@@ -1265,6 +1270,11 @@ video {
 
   .md\:gap-16 {
     gap: 4rem;
+  }
+
+  .md\:px-8 {
+    padding-left: 2rem;
+    padding-right: 2rem;
   }
 
   .md\:text-5xl {
