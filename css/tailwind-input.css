@@ -19,7 +19,8 @@
   .card {
     @apply bg-white border border-black p-8 flex flex-col gap-4 items-center rounded-lg;
   }
-  #form {
+
+  #form, #documentation, #product-specs {
     display: block;
     position: relative;
     top: -150px;
