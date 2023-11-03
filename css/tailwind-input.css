@@ -6,13 +6,10 @@
 @layer components {
   .btn-primary {
     @apply inline-block cursor-pointer uppercase py-2 px-4 bg-blue-500 text-white rounded-sm shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-75;
-    svg {
-      @apply fill-white stroke-blue-500
-    }
   }
   .btn-secondary {
     @apply inline-block cursor-pointer uppercase py-2 px-4 text-blue-500 rounded-sm shadow-sm outline outline-2 hover:bg-blue-100;
-    svg {
+    /* svg {
       @apply fill-white stroke-blue-500 
 
     } 
@@ -20,7 +17,7 @@
       svg {
         @apply fill-blue-100 stroke-blue-500
       }
-    }   
+    }    */
   }
   .content-container {
     @apply w-full max-w-7xl pb-16 px-4 md:px-8 flex justify-between;

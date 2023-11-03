@@ -567,15 +567,6 @@ video {
   --tw-ring-opacity: 0.75;
 }
 
-.btn-primary {
-  svg {
-    fill: #fff;
-  }
-  svg {
-    stroke: #3b82f6;
-  }
-}
-
 .btn-secondary {
   display: inline-block;
   cursor: pointer;
@@ -600,20 +591,15 @@ video {
 }
 
 .btn-secondary {
-  svg {
-    fill: #fff;
-  }
-  svg {
-    stroke: #3b82f6;
-  }
-  &:hover {
-    svg {
-      fill: #dbeafe;
-    }
-    svg {
-      stroke: #3b82f6;
-    }
-  }
+  /* svg {
+      @apply fill-white stroke-blue-500 
+
+    } 
+    &:hover {
+      svg {
+        @apply fill-blue-100 stroke-blue-500
+      }
+    }    */
 }
 
 .content-container {
@@ -1006,6 +992,18 @@ video {
   background-color: rgb(255 255 255 / var(--tw-bg-opacity));
 }
 
+.fill-white {
+  fill: #fff;
+}
+
+.fill-blue-500 {
+  fill: #3b82f6;
+}
+
+.stroke-blue-500 {
+  stroke: #3b82f6;
+}
+
 .p-16 {
   padding: 4rem;
 }
@@ -1207,8 +1205,24 @@ video {
   background-color: rgb(75 85 99 / var(--tw-bg-opacity));
 }
 
+.hover\:fill-white:hover {
+  fill: #fff;
+}
+
+.hover\:fill-blue-100:hover {
+  fill: #dbeafe;
+}
+
+.hover\:stroke-white:hover {
+  stroke: #fff;
+}
+
 .hover\:underline:hover {
   text-decoration-line: underline;
+}
+
+.group:hover .group-hover\:fill-blue-100 {
+  fill: #dbeafe;
 }
 
 @media (min-width: 640px) {
