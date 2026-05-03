@@ -1,0 +1,3730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MA-1 Monitor Interface | Picoyune</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #111827;
+            --bg-tertiary: #1a2235;
+            --bg-card: #151d2e;
+            --border: #2a3548;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-gold: #d4a853;
+            --accent-gold-dim: #a68632;
+            --accent-cyan: #22d3ee;
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+            --accent-orange: #f59e0b;
+            --gradient-gold: linear-gradient(135deg, #d4a853 0%, #f0c674 50%, #d4a853 100%);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Subtle grid background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: 
+                linear-gradient(rgba(212, 168, 83, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(212, 168, 83, 0.02) 1px, transparent 1px);
+            background-size: 60px 60px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        #root {
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+
+        /* Animation keyframes */
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 20px rgba(212, 168, 83, 0.3); }
+            50% { box-shadow: 0 0 40px rgba(212, 168, 83, 0.5); }
+        }
+
+        @keyframes slide-up {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fade-in {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        // ============================================
+        // SERIAL PROTOCOL CONSTANTS
+        // ============================================
+        const TERMINAL_BAUD = 1000000;
+        const MINIMUM_VERSION = { major: 1, minor: 0, build: 0 };
+
+        // ============================================
+        // UTILITY FUNCTIONS
+        // ============================================
+        function parseVersion(line) {
+            const match = line.match(/^Version: (\d+)\.(\d+)\.(\d+)$/);
+            if (match) {
+                return {
+                    major: parseInt(match[1]),
+                    minor: parseInt(match[2]),
+                    build: parseInt(match[3])
+                };
+            }
+            return null;
+        }
+
+        function versionToString(v) {
+            return `${v.major}.${v.minor}.${v.build}`;
+        }
+
+        function compareVersions(a, b) {
+            if (a.major !== b.major) return a.major - b.major;
+            if (a.minor !== b.minor) return a.minor - b.minor;
+            return a.build - b.build;
+        }
+
+        function formatLocalTime(utcTimestamp) {
+            const date = new Date(utcTimestamp * 1000);
+            return date.toLocaleString();
+        }
+
+        function getCurrentUTCTimestamp() {
+            return Math.floor(Date.now() / 1000);
+        }
+
+        // ============================================
+        // DATA PROCESSING (from data.py)
+        // ============================================
+        function processFileLines(lines) {
+            const hgList = [];
+            let fileHeader = "None";
+            let calHeader = "None";
+
+            for (const line of lines) {
+                if (line.startsWith('Serial')) {
+                    fileHeader = line;
+                }
+                if (line.startsWith('Calibrated')) {
+                    calHeader = line;
+                }
+
+                const txt = line.trim();
+                const parts = txt.split(',').map(s => s.trim()).filter(s => s !== '');
+
+                if (parts.length === 3) {
+                    try {
+                        const timestamp = parseFloat(parts[0]);
+                        const value = parseFloat(parts[1]);
+                        const dataType = parseInt(parts[2]);
+
+                        // Valid time range check (946684800 = Jan 1, 2000)
+                        if (timestamp > 946684800 && timestamp < 4126976848) {
+                            if (dataType === 3) { // Hg data
+                                hgList.push({ time: timestamp, value: value });
+                            }
+                        }
+                    } catch (e) {
+                        // Skip bad lines
+                    }
+                } else if (parts.length === 4) {
+                    // Alternative format with timezone
+                    const timezone = parts[2];
+                    const tsString = parts[0] + parts[1] + timezone;
+                    try {
+                        const date = new Date(tsString);
+                        if (!isNaN(date.getTime())) {
+                            hgList.push({ time: date.getTime() / 1000, value: parseFloat(parts[3]) });
+                        }
+                    } catch (e) {
+                        // Skip bad lines
+                    }
+                }
+            }
+
+            return { hgData: hgList, fileHeader, calHeader };
+        }
+
+        // Session gap threshold in seconds (20 minutes)
+        const SESSION_GAP_THRESHOLD = 20 * 60;
+
+        // Generate filename with date, time, and serial number
+        function generateFilename(fileHeader, extension = 'csv', prefix = 'Hg') {
+            const now = new Date();
+            const dateStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+            const timeStr = now.toTimeString().slice(0, 5).replace(':', ''); // HHMM
+            
+            // Extract last 6 characters of serial number from header
+            // Header format example: "SerialNo: 1PICOE462289047391130" -> "391130"
+            let serialSuffix = '';
+            if (fileHeader && fileHeader !== 'None') {
+                // Match "SerialNo:" or "Serial:" followed by the serial string
+                const serialMatch = fileHeader.match(/SerialNo[:\s]+(\S+)/i) || 
+                                   fileHeader.match(/Serial[:\s]+(\S+)/i);
+                if (serialMatch && serialMatch[1]) {
+                    // Get last 6 characters of the serial number
+                    serialSuffix = serialMatch[1].slice(-6);
+                }
+            }
+            
+            if (serialSuffix) {
+                return `MA1-${prefix}-${dateStr}-${timeStr}-${serialSuffix}.${extension}`;
+            } else {
+                return `MA1-${prefix}-${dateStr}-${timeStr}.${extension}`;
+            }
+        }
+
+        function detectSessions(hgData) {
+            if (hgData.length === 0) return [];
+            
+            const sessions = [];
+            let currentSession = [hgData[0]];
+            
+            for (let i = 1; i < hgData.length; i++) {
+                const gap = hgData[i].time - hgData[i - 1].time;
+                
+                if (gap > SESSION_GAP_THRESHOLD) {
+                    // Gap detected, start new session
+                    sessions.push(currentSession);
+                    currentSession = [hgData[i]];
+                } else {
+                    currentSession.push(hgData[i]);
+                }
+            }
+            
+            // Don't forget the last session
+            if (currentSession.length > 0) {
+                sessions.push(currentSession);
+            }
+            
+            return sessions;
+        }
+
+        function calculateTWAForSession(sessionData) {
+            if (sessionData.length === 0) return { twa: [], oshaTwa: [] };
+
+            const startTime = sessionData[0].time;
+            let twaAddition = [sessionData[0].value * 60];
+            const twa = [{ time: startTime, value: twaAddition[0] / 60 }];
+            const oshaTwa = [{ time: startTime, value: twaAddition[0] / (8 * 3600) }];
+
+            for (let i = 1; i < sessionData.length; i++) {
+                const tDiff = sessionData[i].time - sessionData[i - 1].time;
+                
+                if (tDiff < 61) {
+                    twaAddition.push(tDiff * sessionData[i].value);
+                } else if (tDiff < 301) {
+                    twaAddition.push(tDiff * (sessionData[i].value + sessionData[i - 1].value) / 2);
+                } else {
+                    twaAddition.push(60 * sessionData[i].value);
+                }
+
+                const totalTwa = twaAddition.reduce((a, b) => a + b, 0);
+                const elapsedTime = sessionData[i].time - startTime + 60;
+                
+                twa.push({ time: sessionData[i].time, value: totalTwa / elapsedTime });
+
+                if (sessionData[i].time - startTime <= 8 * 3600) {
+                    oshaTwa.push({ time: sessionData[i].time, value: totalTwa / (8 * 3600) });
+                } else {
+                    // Find index for 8-hour window
+                    let idx = 0;
+                    for (let j = 0; j < sessionData.length; j++) {
+                        if (sessionData[j].time - sessionData[i].time > -8 * 3600) {
+                            idx = j;
+                            break;
+                        }
+                    }
+                    const windowSum = twaAddition.slice(idx).reduce((a, b) => a + b, 0);
+                    oshaTwa.push({ time: sessionData[i].time, value: windowSum / (8 * 3600) });
+                }
+            }
+
+            return { twa, oshaTwa };
+        }
+
+        function calculateTWA(hgData) {
+            if (hgData.length === 0) return { twa: [], oshaTwa: [], sessions: [] };
+            
+            // Detect sessions based on gaps > 20 minutes
+            const sessions = detectSessions(hgData);
+            
+            // Calculate TWA for each session separately
+            const allTwa = [];
+            const allOshaTwa = [];
+            const sessionInfo = [];
+            
+            sessions.forEach((session, idx) => {
+                const { twa, oshaTwa } = calculateTWAForSession(session);
+                allTwa.push(...twa);
+                allOshaTwa.push(...oshaTwa);
+                
+                // Store session boundaries for chart rendering
+                sessionInfo.push({
+                    index: idx,
+                    startTime: session[0].time,
+                    endTime: session[session.length - 1].time,
+                    dataPoints: session.length,
+                    finalTwa: oshaTwa.length > 0 ? oshaTwa[oshaTwa.length - 1].value : 0,
+                });
+            });
+
+            return { twa: allTwa, oshaTwa: allOshaTwa, sessions: sessionInfo };
+        }
+
+        // ============================================
+        // SERIAL COMMUNICATION CLASS
+        // ============================================
+        class MA1Serial {
+            constructor() {
+                this.port = null;
+                this.reader = null;
+                this.writer = null;
+                this.lineBuffer = [];
+                this.readBuffer = '';
+                this.keepReading = false;
+                this.onLineReceived = null;
+                this.onDisconnect = null;
+                this.echoEnabled = true;
+                this._disconnecting = false;
+                this._portOpen = false;
+                this._readLoopRunning = false;
+                this._disconnectHandler = null;
+            }
+
+            get isConnected() {
+                return this._portOpen && this.port !== null;
+            }
+
+            async connect() {
+                // If we have a stale connection, clean it up first
+                if (this.port) {
+                    console.log('Cleaning up stale connection before reconnect');
+                    await this.disconnect();
+                    await new Promise(r => setTimeout(r, 300));
+                }
+
+                try {
+                    // Request port from user
+                    this.port = await navigator.serial.requestPort();
+                    
+                    // Open with timeout — but also handle the case where open resolves
+                    // after timeout by tracking state
+                    let opened = false;
+                    const openPromise = this.port.open({ 
+                        baudRate: TERMINAL_BAUD,
+                        bufferSize: 16384,  // Larger buffer for download reliability
+                    }).then(() => { opened = true; });
+                    
+                    const timeoutPromise = new Promise((_, reject) => 
+                        setTimeout(() => {
+                            if (!opened) reject(new Error('Connection timeout - port may be in use'));
+                        }, 8000)
+                    );
+                    
+                    await Promise.race([openPromise, timeoutPromise]);
+                    this._portOpen = true;
+                    
+                    // Toggle DTR/RTS to ensure clean device state (helps with USB-serial chips)
+                    try {
+                        await this.port.setSignals({ dataTerminalReady: false, requestToSend: false });
+                        await new Promise(r => setTimeout(r, 100));
+                        await this.port.setSignals({ dataTerminalReady: true, requestToSend: true });
+                        await new Promise(r => setTimeout(r, 100));
+                    } catch (e) {
+                        // setSignals not supported on all platforms, non-fatal
+                        console.log('DTR/RTS toggle not supported:', e.message);
+                    }
+                    
+                    this.writer = this.port.writable.getWriter();
+                    this.reader = this.port.readable.getReader();
+                    this.keepReading = true;
+                    this._disconnecting = false;
+                    this.readBuffer = '';
+                    this.lineBuffer = [];
+                    
+                    // Listen for USB disconnect events (only for our specific port)
+                    this._disconnectHandler = (event) => {
+                        // Only react if the disconnected port is our port
+                        if (event.target === this.port) {
+                            console.log('USB disconnect detected for our port');
+                            this._portOpen = false;
+                            this.keepReading = false;
+                            if (this.onDisconnect) this.onDisconnect('USB cable disconnected');
+                        }
+                    };
+                    navigator.serial.addEventListener('disconnect', this._disconnectHandler);
+                    
+                    this._startReadLoop();
+                    
+                    // Stabilization: send a newline to flush any partial command on the device,
+                    // wait for any boot messages, then drain them
+                    await new Promise(r => setTimeout(r, 200));
+                    await this._safeWrite('\n');
+                    await new Promise(r => setTimeout(r, 200));
+                    this.clearLines();
+                    
+                    return true;
+                } catch (error) {
+                    // Clean up any partial connection
+                    await this._forceCleanup();
+                    
+                    if (error.name === 'NotFoundError') {
+                        throw new Error('No port selected. Please select a port to connect.');
+                    }
+                    throw error;
+                }
+            }
+
+            _startReadLoop() {
+                if (this._readLoopRunning) return;
+                this._readLoopRunning = true;
+                
+                // Use a streaming decoder that handles partial multi-byte characters
+                const decoder = new TextDecoder('utf-8', { fatal: false });
+                
+                const loop = async () => {
+                    while (this.keepReading && this.reader) {
+                        try {
+                            const { value, done } = await this.reader.read();
+                            if (done) {
+                                console.log('Read loop: stream done signal');
+                                break;
+                            }
+                            
+                            // Decode with stream:true to handle split multi-byte chars
+                            this.readBuffer += decoder.decode(value, { stream: true });
+                            
+                            // Process all complete lines
+                            let newlineIndex;
+                            while ((newlineIndex = this.readBuffer.indexOf('\n')) !== -1) {
+                                const line = this.readBuffer.substring(0, newlineIndex).replace(/\r/g, '').trim();
+                                this.readBuffer = this.readBuffer.substring(newlineIndex + 1);
+                                
+                                if (line) {
+                                    if (this.echoEnabled) {
+                                        console.log('RX:', line);
+                                    }
+                                    this.lineBuffer.push(line);
+                                    if (this.onLineReceived) {
+                                        this.onLineReceived(line);
+                                    }
+                                }
+                            }
+                            
+                            // Safety: if readBuffer grows huge without newlines, something is wrong
+                            if (this.readBuffer.length > 100000) {
+                                console.warn('Read buffer overflow, clearing');
+                                this.readBuffer = '';
+                            }
+                        } catch (error) {
+                            if (this.keepReading && !this._disconnecting) {
+                                console.error('Read loop error:', error);
+                                // Don't treat read errors as disconnect - the base station USB 
+                                // connection may still be valid even if monitor was swapped.
+                                // Only the USB 'disconnect' event means actual USB disconnection.
+                                // Try to restart the read loop after a brief pause.
+                                await new Promise(r => setTimeout(r, 500));
+                                if (this.keepReading && !this._disconnecting && this._portOpen) {
+                                    console.log('Attempting to restart read loop after error...');
+                                    // Release and re-acquire the reader
+                                    try {
+                                        if (this.reader) {
+                                            await this.reader.releaseLock();
+                                        }
+                                        this.reader = this.port.readable.getReader();
+                                        continue; // Restart the loop
+                                    } catch (restartError) {
+                                        console.error('Failed to restart reader:', restartError);
+                                        // Only now do we give up
+                                        if (this.onDisconnect) {
+                                            this.onDisconnect(`Communication error: ${error.message}`);
+                                        }
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    }
+                    this._readLoopRunning = false;
+                };
+                
+                loop();
+            }
+
+            async _safeWrite(text) {
+                if (!this.writer || !this._portOpen) {
+                    throw new Error('Not connected');
+                }
+                
+                try {
+                    const encoder = new TextEncoder();
+                    await this.writer.write(encoder.encode(text));
+                    
+                    if (this.echoEnabled && text.trim()) {
+                        console.log('TX:', text.trim());
+                    }
+                } catch (error) {
+                    // Write failed — but don't immediately disconnect.
+                    // The base station USB may still be connected even if the monitor was swapped.
+                    // Try to re-acquire the writer once before giving up.
+                    console.warn('Write error, attempting recovery:', error.message);
+                    try {
+                        if (this.writer) {
+                            await this.writer.releaseLock();
+                        }
+                        this.writer = this.port.writable.getWriter();
+                        const encoder = new TextEncoder();
+                        await this.writer.write(encoder.encode(text));
+                        console.log('Write recovery successful');
+                        return;
+                    } catch (retryError) {
+                        console.error('Write recovery failed:', retryError);
+                        // Now we can consider it a real disconnect
+                        if (this.onDisconnect && !this._disconnecting) {
+                            this.onDisconnect(`Write failed: ${error.message}`);
+                        }
+                        throw new Error(`Write failed (device may be disconnected): ${error.message}`);
+                    }
+                }
+            }
+
+            async write(text) {
+                await this._safeWrite(text);
+                // Inter-command delay for device processing
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+
+            getLine(timeout = 1000) {
+                return new Promise((resolve) => {
+                    if (this.lineBuffer.length > 0) {
+                        resolve(this.lineBuffer.shift());
+                        return;
+                    }
+                    
+                    const startTime = Date.now();
+                    const check = () => {
+                        if (this.lineBuffer.length > 0) {
+                            resolve(this.lineBuffer.shift());
+                        } else if (!this._portOpen || !this.keepReading) {
+                            resolve(''); // Port closed, don't wait
+                        } else if (Date.now() - startTime >= timeout) {
+                            resolve('');
+                        } else {
+                            setTimeout(check, 5); // Check more frequently (was 10ms)
+                        }
+                    };
+                    
+                    setTimeout(check, 5);
+                });
+            }
+
+            // Get a line with retried write: sends the command, waits, retries on timeout
+            async getLineWithRetry(command, timeout = 1000, maxRetries = 3) {
+                for (let attempt = 0; attempt < maxRetries; attempt++) {
+                    this.clearLines();
+                    await this.write(command);
+                    const line = await this.getLine(timeout);
+                    if (line) return line;
+                    
+                    if (attempt < maxRetries - 1) {
+                        console.log(`Retry ${attempt + 1}/${maxRetries} for command: ${command.trim()}`);
+                        // Progressively longer delays between retries
+                        await new Promise(r => setTimeout(r, 200 * (attempt + 1)));
+                    }
+                }
+                return '';
+            }
+
+            clearLines() {
+                this.lineBuffer = [];
+            }
+
+            async expect(sequence, timeout = 1000, onLine = null) {
+                const startTime = Date.now();
+                
+                while (Date.now() - startTime < timeout) {
+                    if (!this._portOpen) return false; // Bail if disconnected
+                    
+                    const remaining = timeout - (Date.now() - startTime);
+                    const line = await this.getLine(Math.min(200, remaining));
+                    
+                    if (line) {
+                        if (onLine) onLine(line);
+                        if (line.includes(sequence)) {
+                            return true;
+                        }
+                    }
+                }
+                
+                return false;
+            }
+
+            async disconnect() {
+                if (this._disconnecting) return; // Prevent re-entrant disconnect
+                this._disconnecting = true;
+                this.keepReading = false;
+                
+                // Remove USB disconnect listener
+                if (this._disconnectHandler) {
+                    navigator.serial.removeEventListener('disconnect', this._disconnectHandler);
+                    this._disconnectHandler = null;
+                }
+
+                // Release reader with timeout protection
+                if (this.reader) {
+                    try {
+                        // Cancel with timeout — reader.cancel() can hang if the device is unresponsive
+                        await Promise.race([
+                            this.reader.cancel(),
+                            new Promise(r => setTimeout(r, 2000)),
+                        ]);
+                    } catch (e) { console.log('Reader cancel:', e.message); }
+                    try { this.reader.releaseLock(); } catch (e) { console.log('Reader release:', e.message); }
+                }
+
+                // Release writer
+                if (this.writer) {
+                    try { this.writer.releaseLock(); } catch (e) { console.log('Writer release:', e.message); }
+                }
+                
+                // Close port with timeout protection
+                if (this.port && this._portOpen) {
+                    try {
+                        await Promise.race([
+                            this.port.close(),
+                            new Promise(r => setTimeout(r, 3000)),
+                        ]);
+                    } catch (e) { console.log('Port close:', e.message); }
+                }
+                
+                this.port = null;
+                this.reader = null;
+                this.writer = null;
+                this._portOpen = false;
+                this._disconnecting = false;
+                this.readBuffer = '';
+            }
+
+            // Hard cleanup for error recovery — doesn't try to be graceful
+            async _forceCleanup() {
+                this.keepReading = false;
+                this._disconnecting = true;
+                
+                if (this._disconnectHandler) {
+                    navigator.serial.removeEventListener('disconnect', this._disconnectHandler);
+                    this._disconnectHandler = null;
+                }
+                
+                try { if (this.reader) this.reader.releaseLock(); } catch (e) {}
+                try { if (this.writer) this.writer.releaseLock(); } catch (e) {}
+                try { if (this.port && this._portOpen) await this.port.close(); } catch (e) {}
+                
+                this.port = null;
+                this.reader = null;
+                this.writer = null;
+                this._portOpen = false;
+                this._disconnecting = false;
+                this.readBuffer = '';
+                this.lineBuffer = [];
+            }
+
+            async getVersion() {
+                // Try multiple times with increasing timeouts
+                for (let attempt = 0; attempt < 5; attempt++) {
+                    this.clearLines();
+                    // Send a newline first to clear any partial command
+                    if (attempt > 0) {
+                        await this._safeWrite('\n');
+                        await new Promise(r => setTimeout(r, 100));
+                        this.clearLines();
+                    }
+                    await this.write('version\n');
+                    
+                    // Wait progressively longer on retries
+                    const timeout = 500 + (attempt * 300);
+                    const line = await this.getLine(timeout);
+                    const version = parseVersion(line);
+                    if (version) return version;
+                    
+                    // Maybe the response came as a different line; drain buffer
+                    for (let drain = 0; drain < 5; drain++) {
+                        const extra = await this.getLine(100);
+                        if (!extra) break;
+                        const v = parseVersion(extra);
+                        if (v) return v;
+                    }
+                }
+                return null;
+            }
+
+            async getNumPagesData() {
+                for (let attempt = 0; attempt < 5; attempt++) {
+                    this.clearLines();
+                    if (attempt > 0) {
+                        await this._safeWrite('\n');
+                        await new Promise(r => setTimeout(r, 100));
+                        this.clearLines();
+                    }
+                    await this.write('num_pages_data\n');
+                    
+                    const timeout = 500 + (attempt * 300);
+                    const line = await this.getLine(timeout);
+                    const match = line.match(/^(\d+)$/);
+                    if (match) return parseInt(match[1]);
+                    
+                    // Drain extra lines looking for the number
+                    for (let drain = 0; drain < 5; drain++) {
+                        const extra = await this.getLine(100);
+                        if (!extra) break;
+                        const m = extra.match(/^(\d+)$/);
+                        if (m) return parseInt(m[1]);
+                    }
+                }
+                return null;
+            }
+
+            async forceSuspendedMode() {
+                // Send verbose 0 to stop debug output
+                await this.write('verbose 0\n');
+                await new Promise(r => setTimeout(r, 100));
+                
+                // Send halt to suspend device operations
+                await this.write('halt\n');
+                await new Promise(r => setTimeout(r, 100));
+                
+                // Wait for any in-flight data to arrive, then drain it
+                // The device may have buffered output that's still being transmitted
+                await new Promise(r => setTimeout(r, 300));
+                
+                // Clear the read buffer and any queued lines
+                this.readBuffer = '';
+                this.clearLines();
+                
+                // Wait a bit more and drain again to catch any stragglers
+                await new Promise(r => setTimeout(r, 200));
+                this.readBuffer = '';
+                this.clearLines();
+            }
+
+            // Verify connection is alive by checking version
+            async ping() {
+                try {
+                    this.clearLines();
+                    await this._safeWrite('version\n');
+                    const line = await this.getLine(1000);
+                    return parseVersion(line) !== null || line.length > 0;
+                } catch (e) {
+                    return false;
+                }
+            }
+
+            // Read current alarm levels from device
+            // Strategy: set_alarm prints "was X, now Y" so we send a dummy value, parse the "was" value, then restore it
+            async getCurrentAlarms() {
+                const alarms = { low: null, high: null, twa: null };
+                const defaultValues = { low: '0.1', high: '1.0', twa: '0.025' };
+                
+                try {
+                    // Read and restore each alarm
+                    for (const [key, alarmIndex] of [['low', 0], ['high', 1], ['twa', 2]]) {
+                        this.clearLines();
+                        
+                        // Send a dummy set_alarm command to read the current value
+                        await this.write(`set_alarm ${alarmIndex} ${defaultValues[key]}\n`);
+                        
+                        // Wait for response and parse it
+                        let foundValue = null;
+                        for (let i = 0; i < 10; i++) {
+                            const line = await this.getLine(200);
+                            if (!line) continue;
+                            
+                            // Look for pattern like "Low Alarm - was 0.050000, now 0.100000"
+                            // or "High Alarm - was 0.100000, now 1.000000"
+                            // or "TWA Alarm - was 0.025000, now 0.025000"
+                            const match = line.match(/was\s+([\d.]+)/i);
+                            if (match) {
+                                foundValue = parseFloat(match[1]);
+                                break;
+                            }
+                        }
+                        
+                        if (foundValue !== null) {
+                            alarms[key] = foundValue;
+                            
+                            // If we changed it, restore the original value
+                            if (Math.abs(foundValue - parseFloat(defaultValues[key])) > 0.0001) {
+                                this.clearLines();
+                                await this.write(`set_alarm ${alarmIndex} ${foundValue}\n`);
+                                // Wait for confirmation
+                                await this.getLine(300);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('Error reading alarms:', e);
+                }
+                
+                return alarms;
+            }
+        }
+
+        // ============================================
+        // TOAST NOTIFICATION COMPONENT
+        // ============================================
+        function Toast({ message, type = 'info', onClose }) {
+            useEffect(() => {
+                const timer = setTimeout(onClose, 4000);
+                return () => clearTimeout(timer);
+            }, [onClose]);
+
+            const bgColors = {
+                success: 'rgba(16, 185, 129, 0.95)',
+                error: 'rgba(239, 68, 68, 0.95)',
+                warning: 'rgba(245, 158, 11, 0.95)',
+                info: 'rgba(59, 130, 246, 0.95)',
+            };
+
+            const icons = {
+                success: Icons.Check,
+                error: Icons.X,
+                warning: Icons.AlertTriangle,
+                info: Icons.Info,
+            };
+
+            const Icon = icons[type] || icons.info;
+
+            return (
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '16px 20px',
+                    background: bgColors[type],
+                    borderRadius: '12px',
+                    boxShadow: '0 10px 40px rgba(0, 0, 0, 0.4)',
+                    color: 'white',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    animation: 'slide-up 0.3s ease',
+                    maxWidth: '400px',
+                }}>
+                    <Icon />
+                    <span style={{ flex: 1 }}>{message}</span>
+                    <button
+                        onClick={onClose}
+                        style={{
+                            background: 'rgba(255,255,255,0.2)',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '4px',
+                            cursor: 'pointer',
+                            color: 'white',
+                            display: 'flex',
+                        }}
+                    >
+                        <Icons.X />
+                    </button>
+                </div>
+            );
+        }
+
+        function ToastContainer({ toasts, removeToast }) {
+            return (
+                <div style={{
+                    position: 'fixed',
+                    top: '100px',
+                    right: '32px',
+                    zIndex: 2000,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                }}>
+                    {toasts.map(toast => (
+                        <Toast
+                            key={toast.id}
+                            message={toast.message}
+                            type={toast.type}
+                            onClose={() => removeToast(toast.id)}
+                        />
+                    ))}
+                </div>
+            );
+        }
+
+        // ============================================
+        // ICONS
+        // ============================================
+        const Icons = {
+            Usb: () => (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 2v10m0 0l3-3m-3 3l-3-3"/>
+                    <circle cx="12" cy="17" r="3"/>
+                    <path d="M6 12v3a3 3 0 003 3h6a3 3 0 003-3v-3"/>
+                </svg>
+            ),
+            Download: () => (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+            ),
+            Clock: () => (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                </svg>
+            ),
+            Bell: () => (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                    <path d="M13.73 21a2 2 0 01-3.46 0"/>
+                </svg>
+            ),
+            Trash: () => (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="3 6 5 6 21 6"/>
+                    <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                    <line x1="10" y1="11" x2="10" y2="17"/>
+                    <line x1="14" y1="11" x2="14" y2="17"/>
+                </svg>
+            ),
+            RefreshCw: () => (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <polyline points="1 20 1 14 7 14"/>
+                    <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+                </svg>
+            ),
+            Chart: () => (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="20" x2="18" y2="10"/>
+                    <line x1="12" y1="20" x2="12" y2="4"/>
+                    <line x1="6" y1="20" x2="6" y2="14"/>
+                </svg>
+            ),
+            Upload: () => (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+            ),
+            Check: () => (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="20 6 9 17 4 12"/>
+                </svg>
+            ),
+            X: () => (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            ),
+            AlertTriangle: () => (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+            ),
+            Info: () => (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="16" x2="12" y2="12"/>
+                    <line x1="12" y1="8" x2="12.01" y2="8"/>
+                </svg>
+            ),
+            Mercury: () => (
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <circle cx="12" cy="7" r="4"/>
+                    <path d="M12 11v8"/>
+                    <circle cx="12" cy="19" r="2"/>
+                    <path d="M8 7c0 2.21 1.79 4 4 4s4-1.79 4-4"/>
+                </svg>
+            ),
+            Shield: () => (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+            ),
+            User: () => (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+                    <circle cx="12" cy="7" r="4"/>
+                </svg>
+            ),
+            Plus: () => (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="12" y1="5" x2="12" y2="19"/>
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+            ),
+            Zap: () => (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                </svg>
+            ),
+        };
+
+        // ============================================
+        // STYLED COMPONENTS
+        // ============================================
+        const styles = {
+            header: {
+                background: 'linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-primary) 100%)',
+                borderBottom: '1px solid var(--border)',
+                padding: '20px 32px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+            },
+            logo: {
+                display: 'flex',
+                alignItems: 'center',
+                gap: '16px',
+            },
+            logoIcon: {
+                width: '48px',
+                height: '48px',
+                background: 'var(--gradient-gold)',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--bg-primary)',
+            },
+            logoText: {
+                display: 'flex',
+                flexDirection: 'column',
+            },
+            logoTitle: {
+                fontSize: '24px',
+                fontWeight: '700',
+                background: 'var(--gradient-gold)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                letterSpacing: '-0.5px',
+            },
+            logoSubtitle: {
+                fontSize: '13px',
+                color: 'var(--text-muted)',
+                fontWeight: '500',
+            },
+            connectionStatus: {
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '12px 20px',
+                background: 'var(--bg-tertiary)',
+                borderRadius: '12px',
+                border: '1px solid var(--border)',
+            },
+            statusDot: (connected) => ({
+                width: '10px',
+                height: '10px',
+                borderRadius: '50%',
+                background: connected ? 'var(--accent-green)' : 'var(--accent-red)',
+                boxShadow: connected ? '0 0 10px var(--accent-green)' : '0 0 10px var(--accent-red)',
+            }),
+            main: {
+                padding: '32px',
+                maxWidth: '1600px',
+                margin: '0 auto',
+            },
+            grid: {
+                display: 'grid',
+                gridTemplateColumns: 'minmax(300px, 380px) 1fr',
+                gap: '24px',
+            },
+            card: {
+                background: 'var(--bg-card)',
+                borderRadius: '16px',
+                border: '1px solid var(--border)',
+                overflow: 'hidden',
+            },
+            cardHeader: {
+                padding: '20px 24px',
+                borderBottom: '1px solid var(--border)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+            },
+            cardTitle: {
+                fontSize: '16px',
+                fontWeight: '600',
+                color: 'var(--text-primary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+            },
+            cardContent: {
+                padding: '24px',
+            },
+            button: (variant = 'primary', disabled = false) => ({
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px',
+                padding: '14px 24px',
+                borderRadius: '10px',
+                border: 'none',
+                fontSize: '14px',
+                fontWeight: '600',
+                fontFamily: 'inherit',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s ease',
+                opacity: disabled ? 0.5 : 1,
+                width: '100%',
+                ...(variant === 'primary' && {
+                    background: 'var(--gradient-gold)',
+                    color: 'var(--bg-primary)',
+                }),
+                ...(variant === 'secondary' && {
+                    background: 'var(--bg-tertiary)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--border)',
+                }),
+                ...(variant === 'danger' && {
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    color: 'var(--accent-red)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                }),
+                ...(variant === 'success' && {
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    color: 'var(--accent-green)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                }),
+            }),
+            input: {
+                width: '100%',
+                padding: '12px 16px',
+                background: 'var(--bg-secondary)',
+                border: '1px solid var(--border)',
+                borderRadius: '8px',
+                color: 'var(--text-primary)',
+                fontSize: '14px',
+                fontFamily: "'JetBrains Mono', monospace",
+                outline: 'none',
+                transition: 'border-color 0.2s ease',
+            },
+            label: {
+                display: 'block',
+                fontSize: '13px',
+                fontWeight: '500',
+                color: 'var(--text-secondary)',
+                marginBottom: '8px',
+            },
+            actionGrid: {
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: '12px',
+            },
+            stat: {
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px',
+                padding: '16px',
+                background: 'var(--bg-secondary)',
+                borderRadius: '10px',
+            },
+            statLabel: {
+                fontSize: '12px',
+                color: 'var(--text-muted)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+            },
+            statValue: {
+                fontSize: '24px',
+                fontWeight: '700',
+                fontFamily: "'JetBrains Mono', monospace",
+            },
+            progressBar: {
+                width: '100%',
+                height: '6px',
+                background: 'var(--bg-secondary)',
+                borderRadius: '3px',
+                overflow: 'hidden',
+            },
+            progressFill: (progress) => ({
+                width: `${progress}%`,
+                height: '100%',
+                background: 'var(--gradient-gold)',
+                borderRadius: '3px',
+                transition: 'width 0.3s ease',
+            }),
+            modal: {
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'rgba(0, 0, 0, 0.7)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 1000,
+                animation: 'fade-in 0.2s ease',
+            },
+            modalContent: {
+                background: 'var(--bg-card)',
+                borderRadius: '16px',
+                border: '1px solid var(--border)',
+                padding: '32px',
+                maxWidth: '440px',
+                width: '90%',
+                animation: 'slide-up 0.3s ease',
+            },
+            log: {
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border)',
+                borderRadius: '8px',
+                padding: '16px',
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: '12px',
+                maxHeight: '200px',
+                overflowY: 'auto',
+                color: 'var(--text-secondary)',
+            },
+            chartContainer: {
+                height: '400px',
+                padding: '20px',
+            },
+            dataTable: {
+                width: '100%',
+                borderCollapse: 'collapse',
+                fontSize: '13px',
+            },
+            tableHeader: {
+                textAlign: 'left',
+                padding: '12px 16px',
+                background: 'var(--bg-secondary)',
+                color: 'var(--text-secondary)',
+                fontWeight: '600',
+                borderBottom: '1px solid var(--border)',
+            },
+            tableCell: {
+                padding: '12px 16px',
+                borderBottom: '1px solid var(--border)',
+                fontFamily: "'JetBrains Mono', monospace",
+            },
+            spinner: {
+                width: '20px',
+                height: '20px',
+                border: '2px solid transparent',
+                borderTopColor: 'currentColor',
+                borderRadius: '50%',
+                animation: 'spin 0.8s linear infinite',
+            },
+        };
+
+        // ============================================
+        // COMPONENTS
+        // ============================================
+        
+        function Header({ connected, version, onConnect, onDisconnect }) {
+            return (
+                <header style={styles.header}>
+                    <div style={styles.logo}>
+                        <div style={styles.logoIcon}>
+                            <Icons.Mercury />
+                        </div>
+                        <div style={styles.logoText}>
+                            <span style={styles.logoTitle}>MA-1 Interface</span>
+                            <span style={styles.logoSubtitle}>Picoyune Mercury Monitor</span>
+                        </div>
+                    </div>
+                    
+                    <div style={styles.connectionStatus}>
+                        <div style={styles.statusDot(connected)} />
+                        <div>
+                            <div style={{ fontWeight: '600', fontSize: '14px' }}>
+                                {connected ? 'Connected' : 'Disconnected'}
+                            </div>
+                            {version && (
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                                    Firmware v{versionToString(version)}
+                                </div>
+                            )}
+                        </div>
+                        <button
+                            onClick={connected ? onDisconnect : onConnect}
+                            style={{
+                                ...styles.button(connected ? 'secondary' : 'primary'),
+                                width: 'auto',
+                                padding: '10px 20px',
+                                marginLeft: '12px',
+                            }}
+                        >
+                            <Icons.Usb />
+                            {connected ? 'Disconnect' : 'Connect'}
+                        </button>
+                    </div>
+                </header>
+            );
+        }
+
+        function ActionButton({ icon: Icon, label, onClick, disabled, variant = 'secondary' }) {
+            return (
+                <button
+                    onClick={onClick}
+                    disabled={disabled}
+                    style={styles.button(variant, disabled)}
+                >
+                    <Icon />
+                    {label}
+                </button>
+            );
+        }
+
+        function Modal({ title, children, onClose }) {
+            return (
+                <div style={styles.modal} onClick={onClose}>
+                    <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                            <h3 style={{ fontSize: '18px', fontWeight: '600' }}>{title}</h3>
+                            <button
+                                onClick={onClose}
+                                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                            >
+                                <Icons.X />
+                            </button>
+                        </div>
+                        {children}
+                    </div>
+                </div>
+            );
+        }
+
+        function AlarmModal({ onClose, onSave, initialLow = '0.1', initialHigh = '1.0', initialTwa = '0.025', loading = false }) {
+            const [lowAlarm, setLowAlarm] = useState(initialLow);
+            const [highAlarm, setHighAlarm] = useState(initialHigh);
+            const [twaAlarm, setTwaAlarm] = useState(initialTwa);
+
+            // Update values when props change (after loading from device)
+            useEffect(() => {
+                setLowAlarm(initialLow);
+                setHighAlarm(initialHigh);
+                setTwaAlarm(initialTwa);
+            }, [initialLow, initialHigh, initialTwa]);
+
+            return (
+                <Modal title="Set Alarm Levels" onClose={onClose}>
+                    {loading ? (
+                        <div style={{ 
+                            display: 'flex', 
+                            flexDirection: 'column',
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            padding: '40px',
+                            gap: '16px',
+                        }}>
+                            <div style={{
+                                width: '32px',
+                                height: '32px',
+                                border: '3px solid var(--border)',
+                                borderTopColor: 'var(--accent-gold)',
+                                borderRadius: '50%',
+                                animation: 'spin 0.8s linear infinite',
+                            }} />
+                            <span style={{ color: 'var(--text-secondary)' }}>Reading current alarm levels...</span>
+                        </div>
+                    ) : (
+                        <>
+                            <div style={{ marginBottom: '20px' }}>
+                                <label style={styles.label}>Low Alarm (mg/m³)</label>
+                                <input
+                                    type="text"
+                                    value={lowAlarm}
+                                    onChange={e => setLowAlarm(e.target.value)}
+                                    style={styles.input}
+                                    placeholder="0.1"
+                                />
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                    Warning threshold
+                                </div>
+                            </div>
+                            <div style={{ marginBottom: '20px' }}>
+                                <label style={styles.label}>High Alarm (mg/m³)</label>
+                                <input
+                                    type="text"
+                                    value={highAlarm}
+                                    onChange={e => setHighAlarm(e.target.value)}
+                                    style={styles.input}
+                                    placeholder="1.0"
+                                />
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                    Danger threshold
+                                </div>
+                            </div>
+                            <div style={{ marginBottom: '24px' }}>
+                                <label style={styles.label}>8hr TWA Alarm (mg/m³)</label>
+                                <input
+                                    type="text"
+                                    value={twaAlarm}
+                                    onChange={e => setTwaAlarm(e.target.value)}
+                                    style={styles.input}
+                                    placeholder="0.025"
+                                />
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                    ACGIH TLV: 0.025 mg/m³
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '12px' }}>
+                                <button onClick={onClose} style={styles.button('secondary')}>
+                                    Cancel
+                                </button>
+                                <button onClick={() => onSave(lowAlarm, highAlarm, twaAlarm)} style={styles.button('primary')}>
+                                    Save Alarms
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </Modal>
+            );
+        }
+
+        function ConfirmModal({ title, message, onConfirm, onCancel, confirmText = 'Confirm', danger = false }) {
+            return (
+                <Modal title={title} onClose={onCancel}>
+                    <p style={{ color: 'var(--text-secondary)', marginBottom: '24px', lineHeight: '1.6' }}>
+                        {message}
+                    </p>
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                        <button onClick={onCancel} style={styles.button('secondary')}>
+                            Cancel
+                        </button>
+                        <button onClick={onConfirm} style={styles.button(danger ? 'danger' : 'primary')}>
+                            {confirmText}
+                        </button>
+                    </div>
+                </Modal>
+            );
+        }
+
+        function DataChart({ data, twaData, oshaTwaData, onExportRange }) {
+            const chartRef = useRef(null);
+            const chartInstance = useRef(null);
+            const [viewRange, setViewRange] = useState({ start: null, end: null });
+            const [inputRange, setInputRange] = useState({ start: '', end: '' });
+            const [isCustomRange, setIsCustomRange] = useState(false);
+            const [displayedCount, setDisplayedCount] = useState(0);
+
+            // Convert UTC timestamp (seconds) to local time milliseconds
+            // JavaScript Date automatically handles timezone when displaying
+            const toLocalMs = (utcSeconds) => utcSeconds * 1000;
+
+            // Calculate displayed data based on view range
+            const getDisplayedData = useCallback(() => {
+                if (!viewRange.start || !viewRange.end || !data.length) {
+                    return { hg: data, twa: twaData, osha: oshaTwaData };
+                }
+                
+                // viewRange is in milliseconds (from chart)
+                // data.time is in seconds (UTC)
+                // Convert viewRange to seconds for comparison
+                const startTs = viewRange.start / 1000;
+                const endTs = viewRange.end / 1000;
+                
+                const filteredHg = data.filter(d => d.time >= startTs && d.time <= endTs);
+                const filteredTwa = twaData.filter(d => d.time >= startTs && d.time <= endTs);
+                const filteredOsha = oshaTwaData.filter(d => d.time >= startTs && d.time <= endTs);
+                
+                return {
+                    hg: filteredHg,
+                    twa: filteredTwa,
+                    osha: filteredOsha,
+                };
+            }, [data, twaData, oshaTwaData, viewRange]);
+
+            // Update displayed count whenever view range or data changes
+            useEffect(() => {
+                const displayed = getDisplayedData();
+                setDisplayedCount(displayed.hg.length);
+            }, [getDisplayedData]);
+
+            // Reset view range when data changes completely (new data loaded)
+            useEffect(() => {
+                setViewRange({ start: null, end: null });
+                setIsCustomRange(false);
+                setDisplayedCount(data.length);
+            }, [data.length]);
+
+            // Format date for datetime-local input
+            const formatDateForInput = (timestamp) => {
+                if (!timestamp) return '';
+                const date = new Date(timestamp);
+                return date.toISOString().slice(0, 16);
+            };
+
+            // Parse datetime-local input to timestamp
+            const parseInputDate = (dateStr) => {
+                if (!dateStr) return null;
+                return new Date(dateStr).getTime();
+            };
+
+            // Initialize input range when data changes
+            useEffect(() => {
+                if (data.length > 0) {
+                    // data.time is UTC seconds, convert to local time for display
+                    const startMs = data[0].time * 1000;
+                    const endMs = data[data.length - 1].time * 1000;
+                    setInputRange({
+                        start: formatDateForInput(startMs),
+                        end: formatDateForInput(endMs),
+                    });
+                }
+            }, [data]);
+
+            // Apply custom date range
+            const applyDateRange = () => {
+                const start = parseInputDate(inputRange.start);
+                const end = parseInputDate(inputRange.end);
+                
+                if (start && end && start < end) {
+                    setViewRange({ start, end });
+                    setIsCustomRange(true);
+                    
+                    if (chartInstance.current) {
+                        chartInstance.current.options.scales.x.min = start;
+                        chartInstance.current.options.scales.x.max = end;
+                        chartInstance.current.update();
+                    }
+                }
+            };
+
+            // Reset zoom to show all data
+            const resetZoom = () => {
+                setViewRange({ start: null, end: null });
+                setIsCustomRange(false);
+                
+                if (chartInstance.current) {
+                    chartInstance.current.resetZoom();
+                }
+                
+                // Reset input fields to full data range
+                if (data.length > 0) {
+                    setInputRange({
+                        start: formatDateForInput(data[0].time * 1000),
+                        end: formatDateForInput(data[data.length - 1].time * 1000),
+                    });
+                }
+            };
+
+            // Export currently displayed range
+            const handleExportRange = async () => {
+                const displayed = getDisplayedData();
+                if (displayed.hg.length === 0) {
+                    return;
+                }
+                
+                // Create CSV content
+                const header = 'Date,Time,Timezone,Hg Conc. (mg/m3)\n';
+                const rows = displayed.hg.map(d => {
+                    const date = new Date(d.time * 1000);
+                    const dateStr = date.toLocaleDateString('en-US');
+                    const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+                    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                    return `${dateStr},${timeStr},${tz},${d.value}`;
+                }).join('\n');
+                
+                const content = header + rows;
+                
+                // Generate filename with date range
+                const startDate = new Date(displayed.hg[0].time * 1000).toISOString().slice(0, 10);
+                const endDate = new Date(displayed.hg[displayed.hg.length - 1].time * 1000).toISOString().slice(0, 10);
+                const defaultFilename = `MA1-Hg-${startDate}_to_${endDate}.csv`;
+                
+                // Try to use File System Access API for save dialog
+                if ('showSaveFilePicker' in window) {
+                    try {
+                        const handle = await window.showSaveFilePicker({
+                            suggestedName: defaultFilename,
+                            types: [{
+                                description: 'CSV Files',
+                                accept: { 'text/csv': ['.csv'] },
+                            }],
+                        });
+                        const writable = await handle.createWritable();
+                        await writable.write(content);
+                        await writable.close();
+                        console.log(`Saved ${displayed.hg.length} points to ${handle.name}`);
+                    } catch (err) {
+                        if (err.name !== 'AbortError') {
+                            // Actual error, fall back to download
+                            downloadRangeFallback(content, defaultFilename);
+                        }
+                        // User cancelled - do nothing
+                    }
+                } else {
+                    // Browser doesn't support File System Access API
+                    downloadRangeFallback(content, defaultFilename);
+                }
+            };
+            
+            const downloadRangeFallback = (content, filename) => {
+                const blob = new Blob([content], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.click();
+                URL.revokeObjectURL(url);
+            };
+
+            // Update view range when chart is zoomed
+            const handleZoomComplete = ({ chart }) => {
+                const { min, max } = chart.scales.x;
+                setViewRange({ start: min, end: max });
+                setIsCustomRange(true);
+                setInputRange({
+                    start: formatDateForInput(min),
+                    end: formatDateForInput(max),
+                });
+            };
+
+            useEffect(() => {
+                if (!chartRef.current || !data || data.length === 0) return;
+
+                const ctx = chartRef.current.getContext('2d');
+
+                if (chartInstance.current) {
+                    chartInstance.current.destroy();
+                }
+
+                chartInstance.current = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        datasets: [
+                            {
+                                label: 'Hg Concentration',
+                                data: data.map((d, i) => {
+                                    // Insert null to break line if gap > 20 min from previous point
+                                    if (i > 0 && (d.time - data[i-1].time) > SESSION_GAP_THRESHOLD) {
+                                        return [
+                                            { x: (data[i-1].time + 1) * 1000, y: null }, // Break point
+                                            { x: d.time * 1000, y: d.value }
+                                        ];
+                                    }
+                                    return { x: d.time * 1000, y: d.value };
+                                }).flat(),
+                                borderColor: '#d4a853',
+                                backgroundColor: 'rgba(212, 168, 83, 0.1)',
+                                pointBackgroundColor: '#d4a853',
+                                pointBorderColor: '#d4a853',
+                                pointRadius: 3,
+                                pointHoverRadius: 5,
+                                borderWidth: 2,
+                                tension: 0,
+                                fill: true,
+                                spanGaps: false,
+                            },
+                            {
+                                label: 'Running TWA',
+                                data: twaData.map((d, i) => {
+                                    if (i > 0 && (d.time - twaData[i-1].time) > SESSION_GAP_THRESHOLD) {
+                                        return [
+                                            { x: (twaData[i-1].time + 1) * 1000, y: null },
+                                            { x: d.time * 1000, y: d.value }
+                                        ];
+                                    }
+                                    return { x: d.time * 1000, y: d.value };
+                                }).flat(),
+                                borderColor: '#22d3ee',
+                                pointRadius: 0,
+                                borderWidth: 2,
+                                tension: 0.3,
+                                spanGaps: false,
+                            },
+                            {
+                                label: '8Hr TWA',
+                                data: oshaTwaData.map((d, i) => {
+                                    if (i > 0 && (d.time - oshaTwaData[i-1].time) > SESSION_GAP_THRESHOLD) {
+                                        return [
+                                            { x: (oshaTwaData[i-1].time + 1) * 1000, y: null },
+                                            { x: d.time * 1000, y: d.value }
+                                        ];
+                                    }
+                                    return { x: d.time * 1000, y: d.value };
+                                }).flat(),
+                                borderColor: '#3b82f6',
+                                pointRadius: 0,
+                                borderWidth: 2,
+                                tension: 0.3,
+                                spanGaps: false,
+                            },
+                        ],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false,
+                        },
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                                labels: {
+                                    color: '#94a3b8',
+                                    font: {
+                                        family: "'Plus Jakarta Sans', sans-serif",
+                                        size: 12,
+                                    },
+                                    usePointStyle: true,
+                                    padding: 20,
+                                },
+                            },
+                            tooltip: {
+                                backgroundColor: '#1a2235',
+                                titleColor: '#f1f5f9',
+                                bodyColor: '#94a3b8',
+                                borderColor: '#2a3548',
+                                borderWidth: 1,
+                                padding: 12,
+                                titleFont: {
+                                    family: "'Plus Jakarta Sans', sans-serif",
+                                    size: 13,
+                                },
+                                bodyFont: {
+                                    family: "'JetBrains Mono', monospace",
+                                    size: 12,
+                                },
+                                callbacks: {
+                                    label: (context) => {
+                                        return `${context.dataset.label}: ${context.parsed.y.toFixed(4)} mg/m³`;
+                                    },
+                                },
+                            },
+                            zoom: {
+                                pan: {
+                                    enabled: true,
+                                    mode: 'x',
+                                    modifierKey: 'shift',
+                                },
+                                zoom: {
+                                    wheel: {
+                                        enabled: true,
+                                    },
+                                    pinch: {
+                                        enabled: true,
+                                    },
+                                    drag: {
+                                        enabled: true,
+                                        backgroundColor: 'rgba(212, 168, 83, 0.2)',
+                                        borderColor: 'rgba(212, 168, 83, 0.8)',
+                                        borderWidth: 1,
+                                    },
+                                    mode: 'x',
+                                    onZoomComplete: handleZoomComplete,
+                                },
+                            },
+                        },
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: {
+                                    displayFormats: {
+                                        hour: 'HH:mm',
+                                        minute: 'HH:mm',
+                                        day: 'dd MMM',
+                                    },
+                                },
+                                grid: {
+                                    color: 'rgba(42, 53, 72, 0.5)',
+                                },
+                                ticks: {
+                                    color: '#64748b',
+                                    font: {
+                                        family: "'JetBrains Mono', monospace",
+                                        size: 11,
+                                    },
+                                },
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Hg Conc. (mg/m³)',
+                                    color: '#94a3b8',
+                                    font: {
+                                        family: "'Plus Jakarta Sans', sans-serif",
+                                        size: 12,
+                                    },
+                                },
+                                grid: {
+                                    color: 'rgba(42, 53, 72, 0.5)',
+                                },
+                                ticks: {
+                                    color: '#64748b',
+                                    font: {
+                                        family: "'JetBrains Mono', monospace",
+                                        size: 11,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                });
+
+                return () => {
+                    if (chartInstance.current) {
+                        chartInstance.current.destroy();
+                    }
+                };
+            }, [data, twaData, oshaTwaData]);
+
+            if (!data || data.length === 0) {
+                return (
+                    <div style={{ 
+                        height: '400px', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        color: 'var(--text-muted)',
+                    }}>
+                        <div style={{ textAlign: 'center' }}>
+                            <Icons.Chart />
+                            <p style={{ marginTop: '12px' }}>No data to display</p>
+                            <p style={{ fontSize: '13px' }}>Download data from device or load a file</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            const displayedData = getDisplayedData();
+
+            return (
+                <div>
+                    {/* Chart Controls */}
+                    <div style={{ 
+                        padding: '16px 20px', 
+                        borderBottom: '1px solid var(--border)',
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '12px',
+                        alignItems: 'flex-end',
+                    }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <label style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                                Start Date/Time
+                            </label>
+                            <input
+                                type="datetime-local"
+                                value={inputRange.start}
+                                onChange={e => setInputRange(prev => ({ ...prev, start: e.target.value }))}
+                                style={{
+                                    ...styles.input,
+                                    width: '200px',
+                                    padding: '8px 12px',
+                                    fontSize: '13px',
+                                }}
+                            />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <label style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                                End Date/Time
+                            </label>
+                            <input
+                                type="datetime-local"
+                                value={inputRange.end}
+                                onChange={e => setInputRange(prev => ({ ...prev, end: e.target.value }))}
+                                style={{
+                                    ...styles.input,
+                                    width: '200px',
+                                    padding: '8px 12px',
+                                    fontSize: '13px',
+                                }}
+                            />
+                        </div>
+                        <button
+                            onClick={applyDateRange}
+                            style={{
+                                ...styles.button('secondary'),
+                                width: 'auto',
+                                padding: '8px 16px',
+                                fontSize: '13px',
+                            }}
+                        >
+                            Apply Range
+                        </button>
+                        <button
+                            onClick={resetZoom}
+                            style={{
+                                ...styles.button('secondary'),
+                                width: 'auto',
+                                padding: '8px 16px',
+                                fontSize: '13px',
+                            }}
+                        >
+                            <Icons.RefreshCw />
+                            Reset View
+                        </button>
+                        <div style={{ flex: 1 }} />
+                        <button
+                            onClick={handleExportRange}
+                            disabled={displayedCount === 0}
+                            style={{
+                                ...styles.button('primary', displayedCount === 0),
+                                width: 'auto',
+                                padding: '8px 16px',
+                                fontSize: '13px',
+                            }}
+                        >
+                            <Icons.Download />
+                            Export Range ({displayedCount} pts)
+                        </button>
+                    </div>
+
+                    {/* Zoom Instructions */}
+                    <div style={{ 
+                        padding: '8px 20px', 
+                        background: 'var(--bg-secondary)',
+                        fontSize: '12px',
+                        color: 'var(--text-muted)',
+                        display: 'flex',
+                        gap: '20px',
+                        flexWrap: 'wrap',
+                    }}>
+                        <span>🖱️ <strong>Scroll</strong> to zoom</span>
+                        <span>📦 <strong>Click + Drag</strong> to select range</span>
+                        <span>⇧ <strong>Shift + Drag</strong> to pan</span>
+                        <span>📱 <strong>Pinch</strong> to zoom on touch</span>
+                    </div>
+
+                    {/* Chart */}
+                    <div style={styles.chartContainer}>
+                        <canvas ref={chartRef} />
+                    </div>
+
+                    {/* Range Info */}
+                    {isCustomRange && displayedCount > 0 && (
+                        <div style={{ 
+                            padding: '12px 20px', 
+                            borderTop: '1px solid var(--border)',
+                            background: 'rgba(212, 168, 83, 0.1)',
+                            fontSize: '13px',
+                            color: 'var(--accent-gold)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                        }}>
+                            <Icons.Info />
+                            Showing {displayedCount} of {data.length} data points 
+                            ({((displayedCount / data.length) * 100).toFixed(1)}%)
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        function LogPanel({ logs }) {
+            const logRef = useRef(null);
+
+            useEffect(() => {
+                if (logRef.current) {
+                    logRef.current.scrollTop = logRef.current.scrollHeight;
+                }
+            }, [logs]);
+
+            return (
+                <div ref={logRef} style={styles.log}>
+                    {logs.length === 0 ? (
+                        <span style={{ color: 'var(--text-muted)' }}>Waiting for activity...</span>
+                    ) : (
+                        logs.map((log, i) => (
+                            <div key={i} style={{ marginBottom: '4px' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>[{log.time}]</span>{' '}
+                                <span style={{ color: log.type === 'error' ? 'var(--accent-red)' : 
+                                              log.type === 'success' ? 'var(--accent-green)' : 
+                                              log.type === 'warning' ? 'var(--accent-orange)' : 'var(--text-secondary)' }}>
+                                    {log.message}
+                                </span>
+                            </div>
+                        ))
+                    )}
+                </div>
+            );
+        }
+
+        // ============================================
+        // CARTRIDGE TRACKING SYSTEM
+        // ============================================
+        const OSHA_CARTRIDGE_CAPACITY = 42; // mg·hr/m³
+
+        function loadCartridgeData() {
+            try {
+                const raw = localStorage.getItem('ma1_cartridge_data');
+                return raw ? JSON.parse(raw) : { workers: {} };
+            } catch (e) {
+                return { workers: {} };
+            }
+        }
+
+        function saveCartridgeData(data) {
+            localStorage.setItem('ma1_cartridge_data', JSON.stringify(data));
+        }
+
+        // Calculate cumulative dose from hg data: Σ(conc × Δt) in mg·hr/m³
+        function calculateCumulativeDose(hgData) {
+            if (hgData.length < 2) return 0;
+            let dose = 0;
+            for (let i = 1; i < hgData.length; i++) {
+                const dt = (hgData[i].time - hgData[i - 1].time) / 3600; // seconds to hours
+                if (dt > 0 && dt < 1) { // skip gaps > 1 hour
+                    const avgConc = (hgData[i].value + hgData[i - 1].value) / 2;
+                    dose += avgConc * dt;
+                }
+            }
+            return dose;
+        }
+
+        function WorkerIdModal({ onConfirm, onCancel, workers, lastWorkerId }) {
+            const [workerId, setWorkerId] = useState(lastWorkerId || '');
+            const [isNew, setIsNew] = useState(false);
+
+            const existingWorkers = Object.keys(workers);
+
+            return (
+                <Modal title="Assign Worker ID" onClose={onCancel}>
+                    <p style={{ color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: '1.6', fontSize: '14px' }}>
+                        Associate this data with a worker for respirator cartridge tracking.
+                    </p>
+                    
+                    {existingWorkers.length > 0 && !isNew && (
+                        <div style={{ marginBottom: '16px' }}>
+                            <label style={styles.label}>Select Existing Worker</label>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {existingWorkers.map(id => (
+                                    <button
+                                        key={id}
+                                        onClick={() => setWorkerId(id)}
+                                        style={{
+                                            ...styles.button(workerId === id ? 'primary' : 'secondary'),
+                                            padding: '10px 16px',
+                                            fontSize: '13px',
+                                            justifyContent: 'flex-start',
+                                        }}
+                                    >
+                                        <Icons.User />
+                                        {id}
+                                        {workers[id]?.cartridgeStart && (
+                                            <span style={{ 
+                                                marginLeft: 'auto', 
+                                                fontSize: '11px', 
+                                                opacity: 0.7,
+                                                color: workerId === id ? 'inherit' : 'var(--text-muted)',
+                                            }}>
+                                                {(workers[id].cumulativeDose || 0).toFixed(2)} / {OSHA_CARTRIDGE_CAPACITY} mg·hr/m³
+                                            </span>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                            <button
+                                onClick={() => { setIsNew(true); setWorkerId(''); }}
+                                style={{
+                                    ...styles.button('secondary'),
+                                    marginTop: '8px',
+                                    padding: '8px 16px',
+                                    fontSize: '13px',
+                                }}
+                            >
+                                <Icons.Plus />
+                                New Worker
+                            </button>
+                        </div>
+                    )}
+
+                    {(existingWorkers.length === 0 || isNew) && (
+                        <div style={{ marginBottom: '16px' }}>
+                            <label style={styles.label}>Worker ID</label>
+                            <input
+                                type="text"
+                                value={workerId}
+                                onChange={e => setWorkerId(e.target.value)}
+                                style={styles.input}
+                                placeholder="e.g. JSmith, W001, etc."
+                                autoFocus
+                            />
+                            {existingWorkers.length > 0 && (
+                                <button
+                                    onClick={() => { setIsNew(false); setWorkerId(lastWorkerId || ''); }}
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        color: 'var(--accent-gold)',
+                                        cursor: 'pointer',
+                                        fontSize: '13px',
+                                        marginTop: '8px',
+                                        padding: 0,
+                                    }}
+                                >
+                                    ← Back to existing workers
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                        <button onClick={onCancel} style={styles.button('secondary')}>
+                            Skip
+                        </button>
+                        <button 
+                            onClick={() => onConfirm(workerId.trim())} 
+                            disabled={!workerId.trim()}
+                            style={styles.button('primary', !workerId.trim())}
+                        >
+                            <Icons.User />
+                            Assign & Continue
+                        </button>
+                    </div>
+                </Modal>
+            );
+        }
+
+        function CartridgeTracker({ cartridgeData, onCartridgeDataChange, addLog, showToast }) {
+            const [expandedWorker, setExpandedWorker] = useState(null);
+            const [showNewCartridgeConfirm, setShowNewCartridgeConfirm] = useState(null);
+            const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+
+            const workers = cartridgeData.workers || {};
+            const workerIds = Object.keys(workers);
+
+            const handleNewCartridge = (workerId) => {
+                const updated = { ...cartridgeData };
+                const worker = updated.workers[workerId];
+                // Archive old cartridge
+                if (!worker.cartridgeHistory) worker.cartridgeHistory = [];
+                if (worker.cartridgeStart) {
+                    worker.cartridgeHistory.push({
+                        start: worker.cartridgeStart,
+                        end: new Date().toISOString(),
+                        finalDose: worker.cumulativeDose,
+                        sessions: worker.sessions || [],
+                    });
+                }
+                worker.cartridgeStart = new Date().toISOString();
+                worker.cumulativeDose = 0;
+                worker.sessions = [];
+                onCartridgeDataChange(updated);
+                setShowNewCartridgeConfirm(null);
+                addLog(`New cartridge started for ${workerId}`, 'success');
+                showToast(`New cartridge session started for ${workerId}`, 'success');
+            };
+
+            const handleDeleteWorker = (workerId) => {
+                const updated = { ...cartridgeData };
+                delete updated.workers[workerId];
+                onCartridgeDataChange(updated);
+                setShowDeleteConfirm(null);
+                setExpandedWorker(null);
+                addLog(`Removed worker ${workerId}`, 'warning');
+            };
+
+            if (workerIds.length === 0) {
+                return (
+                    <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '12px 0' }}>
+                        <Icons.Shield />
+                        <p style={{ marginTop: '8px', fontSize: '13px' }}>No workers tracked yet</p>
+                        <p style={{ fontSize: '12px' }}>Download or load data and assign a worker ID to begin tracking</p>
+                    </div>
+                );
+            }
+
+            return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {workerIds.map(id => {
+                        const worker = workers[id];
+                        const dose = worker.cumulativeDose || 0;
+                        const pct = Math.min(100, (dose / OSHA_CARTRIDGE_CAPACITY) * 100);
+                        const isExpanded = expandedWorker === id;
+                        const isWarning = pct >= 50 && pct < 80;
+                        const isDanger = pct >= 80;
+                        const barColor = isDanger ? 'var(--accent-red)' : isWarning ? 'var(--accent-orange)' : 'var(--accent-green)';
+
+                        return (
+                            <div key={id} style={{
+                                background: 'var(--bg-secondary)',
+                                borderRadius: '10px',
+                                border: isDanger ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid var(--border)',
+                                overflow: 'hidden',
+                            }}>
+                                <div
+                                    onClick={() => setExpandedWorker(isExpanded ? null : id)}
+                                    style={{
+                                        padding: '14px 16px',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '8px',
+                                    }}
+                                >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <Icons.User />
+                                            <span style={{ fontWeight: '600', fontSize: '14px' }}>{id}</span>
+                                        </div>
+                                        <span style={{ 
+                                            fontFamily: "'JetBrains Mono', monospace", 
+                                            fontSize: '13px',
+                                            color: barColor,
+                                            fontWeight: '600',
+                                        }}>
+                                            {pct.toFixed(1)}%
+                                        </span>
+                                    </div>
+
+                                    {/* Progress bar */}
+                                    <div style={{
+                                        width: '100%',
+                                        height: '8px',
+                                        background: 'var(--bg-primary)',
+                                        borderRadius: '4px',
+                                        overflow: 'hidden',
+                                    }}>
+                                        <div style={{
+                                            width: `${pct}%`,
+                                            height: '100%',
+                                            background: barColor,
+                                            borderRadius: '4px',
+                                            transition: 'width 0.5s ease',
+                                        }} />
+                                    </div>
+
+                                    <div style={{ 
+                                        display: 'flex', 
+                                        justifyContent: 'space-between', 
+                                        fontSize: '11px', 
+                                        color: 'var(--text-muted)',
+                                        fontFamily: "'JetBrains Mono', monospace",
+                                    }}>
+                                        <span>{dose.toFixed(3)} mg·hr/m³</span>
+                                        <span>/ {OSHA_CARTRIDGE_CAPACITY} mg·hr/m³ OSHA capacity</span>
+                                    </div>
+
+                                    {isDanger && (
+                                        <div style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            fontSize: '12px',
+                                            color: 'var(--accent-red)',
+                                            fontWeight: '600',
+                                        }}>
+                                            <Icons.AlertTriangle />
+                                            {pct >= 100 ? 'Cartridge capacity exceeded — replace immediately' : 'Cartridge approaching capacity — plan replacement'}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {isExpanded && (
+                                    <div style={{
+                                        borderTop: '1px solid var(--border)',
+                                        padding: '14px 16px',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '10px',
+                                    }}>
+                                        <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                                            <div>Cartridge started: {worker.cartridgeStart ? new Date(worker.cartridgeStart).toLocaleString() : 'Not set'}</div>
+                                            <div>Sessions recorded: {(worker.sessions || []).length}</div>
+                                            {worker.cartridgeHistory && worker.cartridgeHistory.length > 0 && (
+                                                <div>Previous cartridges: {worker.cartridgeHistory.length}</div>
+                                            )}
+                                        </div>
+
+                                        {/* Session history */}
+                                        {(worker.sessions || []).length > 0 && (
+                                            <div style={{ maxHeight: '120px', overflowY: 'auto' }}>
+                                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>
+                                                    Session Log
+                                                </div>
+                                                {worker.sessions.map((s, i) => (
+                                                    <div key={i} style={{
+                                                        fontSize: '11px',
+                                                        fontFamily: "'JetBrains Mono', monospace",
+                                                        color: 'var(--text-secondary)',
+                                                        padding: '3px 0',
+                                                        borderBottom: '1px solid var(--border)',
+                                                    }}>
+                                                        {new Date(s.date).toLocaleDateString()} — +{s.dose.toFixed(4)} mg·hr/m³ ({s.readings} readings, {s.durationMin}m)
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); setShowNewCartridgeConfirm(id); }}
+                                                style={{
+                                                    ...styles.button('success'),
+                                                    padding: '8px 12px',
+                                                    fontSize: '12px',
+                                                }}
+                                            >
+                                                <Icons.RefreshCw />
+                                                New Cartridge
+                                            </button>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(id); }}
+                                                style={{
+                                                    ...styles.button('danger'),
+                                                    padding: '8px 12px',
+                                                    fontSize: '12px',
+                                                }}
+                                            >
+                                                <Icons.Trash />
+                                                Remove
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Confirm modals */}
+                                {showNewCartridgeConfirm === id && (
+                                    <ConfirmModal
+                                        title="Start New Cartridge"
+                                        message={`Reset cumulative dose for ${id} and start a new cartridge tracking session? The current cartridge data (${dose.toFixed(3)} mg·hr/m³) will be archived.`}
+                                        confirmText="Start New Cartridge"
+                                        onConfirm={() => handleNewCartridge(id)}
+                                        onCancel={() => setShowNewCartridgeConfirm(null)}
+                                    />
+                                )}
+                                {showDeleteConfirm === id && (
+                                    <ConfirmModal
+                                        title="Remove Worker"
+                                        message={`Remove worker ${id} and all cartridge tracking data? This cannot be undone.`}
+                                        confirmText="Remove Worker"
+                                        danger={true}
+                                        onConfirm={() => handleDeleteWorker(id)}
+                                        onCancel={() => setShowDeleteConfirm(null)}
+                                    />
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+        }
+
+        // ============================================
+        // MAIN APP
+        // ============================================
+        function App() {
+            // Connection state
+            const [connected, setConnected] = useState(false);
+            const [version, setVersion] = useState(null);
+            const [busy, setBusy] = useState(false);
+            const [progress, setProgress] = useState(0);
+            const [statusMessage, setStatusMessage] = useState('');
+            
+            // Data state
+            const [hgData, setHgData] = useState([]);
+            const [twaData, setTwaData] = useState([]);
+            const [oshaTwaData, setOshaTwaData] = useState([]);
+            const [sessions, setSessions] = useState([]);
+            const [logs, setLogs] = useState([]);
+            
+            // Current device alarm levels
+            const [currentAlarms, setCurrentAlarms] = useState({ low: '0.1', high: '1.0', twa: '0.025' });
+            const [alarmLoading, setAlarmLoading] = useState(false);
+            
+            // Toast state
+            const [toasts, setToasts] = useState([]);
+            const toastIdRef = useRef(0);
+            
+            // Modal state
+            const [showAlarmModal, setShowAlarmModal] = useState(false);
+            const [showTimesyncModal, setShowTimesyncModal] = useState(false);
+            const [showEraseModal, setShowEraseModal] = useState(false);
+            const [dataDownloaded, setDataDownloaded] = useState(false);
+            
+            // Serial reference
+            const serialRef = useRef(new MA1Serial());
+
+            // Cartridge tracking state
+            const [cartridgeData, setCartridgeData] = useState(() => loadCartridgeData());
+            const [showWorkerModal, setShowWorkerModal] = useState(false);
+            const [lastWorkerId, setLastWorkerId] = useState('');
+            const [pendingDataForWorker, setPendingDataForWorker] = useState(null);
+            
+            // Recovery data state - check localStorage for unsaved downloads
+            const [hasRecoveryData, setHasRecoveryData] = useState(() => {
+                try {
+                    const saved = localStorage.getItem('ma1_recovery_data');
+                    if (saved) {
+                        const data = JSON.parse(saved);
+                        // Check if data is less than 24 hours old
+                        if (data.timestamp && (Date.now() - data.timestamp) < 24 * 60 * 60 * 1000) {
+                            return true;
+                        } else {
+                            localStorage.removeItem('ma1_recovery_data');
+                        }
+                    }
+                } catch (e) {}
+                return false;
+            });
+
+            // Check Web Serial support
+            const webSerialSupported = 'serial' in navigator;
+
+            const addLog = useCallback((message, type = 'info') => {
+                const time = new Date().toLocaleTimeString();
+                setLogs(prev => [...prev.slice(-100), { time, message, type }]);
+            }, []);
+
+            const showToast = useCallback((message, type = 'info') => {
+                const id = ++toastIdRef.current;
+                setToasts(prev => [...prev, { id, message, type }]);
+            }, []);
+
+            const removeToast = useCallback((id) => {
+                setToasts(prev => prev.filter(t => t.id !== id));
+            }, []);
+            
+            // Save download data to localStorage for recovery
+            const saveRecoveryData = useCallback((rawLines, hgCsvContent, fileHeader) => {
+                try {
+                    const recoveryData = {
+                        timestamp: Date.now(),
+                        rawLog: rawLines.join('\n'),
+                        hgCsv: hgCsvContent,
+                        fileHeader: fileHeader,
+                    };
+                    localStorage.setItem('ma1_recovery_data', JSON.stringify(recoveryData));
+                    setHasRecoveryData(true);
+                } catch (e) {
+                    console.warn('Could not save recovery data:', e);
+                }
+            }, []);
+            
+            // Clear recovery data after successful save
+            const clearRecoveryData = useCallback(() => {
+                try {
+                    localStorage.removeItem('ma1_recovery_data');
+                    setHasRecoveryData(false);
+                } catch (e) {}
+            }, []);
+            
+            // Recover and re-download the last saved data
+            const handleRecoverData = useCallback(() => {
+                try {
+                    const saved = localStorage.getItem('ma1_recovery_data');
+                    if (!saved) {
+                        showToast('No recovery data found', 'warning');
+                        return;
+                    }
+                    
+                    const data = JSON.parse(saved);
+                    const timestamp = new Date(data.timestamp);
+                    const timeStr = timestamp.toLocaleString();
+                    
+                    addLog(`Recovering data from ${timeStr}...`, 'info');
+                    
+                    // Generate filenames based on recovery time
+                    const hgFilename = generateFilename(data.fileHeader, 'csv', 'Hg-RECOVERED');
+                    const logFilename = generateFilename(data.fileHeader, 'txt', 'Log-RECOVERED');
+                    
+                    // Download both files
+                    if (data.hgCsv) {
+                        downloadFallback(data.hgCsv, hgFilename);
+                        addLog(`Recovered Hg data to ${hgFilename}`, 'success');
+                    }
+                    
+                    if (data.rawLog) {
+                        downloadFallback(data.rawLog, logFilename);
+                        addLog(`Recovered raw log to ${logFilename}`, 'success');
+                    }
+                    
+                    showToast('Recovery files downloaded! You can now clear recovery data.', 'success');
+                    
+                } catch (e) {
+                    addLog(`Recovery failed: ${e.message}`, 'error');
+                    showToast('Failed to recover data', 'error');
+                }
+            }, [addLog, showToast]);
+
+            const handleCartridgeDataChange = useCallback((data) => {
+                setCartridgeData(data);
+                saveCartridgeData(data);
+            }, []);
+
+            const assignDataToWorker = useCallback((workerId, hgDataToAssign) => {
+                if (!workerId || !hgDataToAssign || hgDataToAssign.length < 2) return;
+
+                const dose = calculateCumulativeDose(hgDataToAssign);
+                const durationMin = Math.round((hgDataToAssign[hgDataToAssign.length - 1].time - hgDataToAssign[0].time) / 60);
+
+                const updated = { ...cartridgeData };
+                if (!updated.workers[workerId]) {
+                    updated.workers[workerId] = {
+                        cartridgeStart: new Date().toISOString(),
+                        cumulativeDose: 0,
+                        sessions: [],
+                        cartridgeHistory: [],
+                    };
+                    addLog(`New worker "${workerId}" added to cartridge tracker`, 'success');
+                }
+
+                const worker = updated.workers[workerId];
+                worker.cumulativeDose = (worker.cumulativeDose || 0) + dose;
+                if (!worker.sessions) worker.sessions = [];
+                worker.sessions.push({
+                    date: new Date().toISOString(),
+                    dose: dose,
+                    readings: hgDataToAssign.length,
+                    durationMin: durationMin,
+                    startTime: new Date(hgDataToAssign[0].time * 1000).toISOString(),
+                    endTime: new Date(hgDataToAssign[hgDataToAssign.length - 1].time * 1000).toISOString(),
+                });
+
+                handleCartridgeDataChange(updated);
+                setLastWorkerId(workerId);
+
+                const pct = (worker.cumulativeDose / OSHA_CARTRIDGE_CAPACITY * 100);
+                addLog(`Cartridge dose for ${workerId}: +${dose.toFixed(4)} mg·hr/m³ (total: ${worker.cumulativeDose.toFixed(3)}, ${pct.toFixed(1)}% of OSHA capacity)`, 
+                    pct >= 80 ? 'warning' : 'success');
+
+                if (pct >= 100) {
+                    showToast(`⚠️ ${workerId}: Cartridge capacity EXCEEDED (${pct.toFixed(0)}%) — replace immediately!`, 'error');
+                } else if (pct >= 80) {
+                    showToast(`⚠️ ${workerId}: Cartridge at ${pct.toFixed(0)}% capacity — plan replacement`, 'warning');
+                } else {
+                    showToast(`${workerId}: Cartridge at ${pct.toFixed(1)}% capacity`, 'success');
+                }
+            }, [cartridgeData, handleCartridgeDataChange, addLog, showToast]);
+
+            const handleConnect = async () => {
+                if (!webSerialSupported) {
+                    addLog('Web Serial API not supported. Use Chrome or Edge.', 'error');
+                    return;
+                }
+
+                try {
+                    setBusy(true);
+                    setStatusMessage('Connecting...');
+                    addLog('Requesting serial port...');
+                    
+                    // Set up disconnect handler before connecting
+                    serialRef.current.onDisconnect = (reason) => {
+                        addLog(`Device disconnected: ${reason}`, 'error');
+                        showToast(`Device disconnected: ${reason}`, 'error');
+                        setConnected(false);
+                        setVersion(null);
+                        setBusy(false);
+                        setStatusMessage('');
+                        setProgress(0);
+                        // Ensure echoEnabled is restored
+                        serialRef.current.echoEnabled = true;
+                    };
+                    
+                    await serialRef.current.connect();
+                    addLog('Port opened, checking firmware version...');
+                    
+                    // Put device in a known state before anything else
+                    await serialRef.current.forceSuspendedMode();
+                    addLog('Device halted, querying version...');
+                    
+                    const ver = await serialRef.current.getVersion();
+                    if (!ver) {
+                        throw new Error('Could not get firmware version after 5 attempts. Device may not be responding.\n\nTry: unplug USB, wait 3 seconds, plug back in, then Connect again.');
+                    }
+                    
+                    addLog(`Firmware version: ${versionToString(ver)}`, 'success');
+                    
+                    if (compareVersions(ver, MINIMUM_VERSION) < 0) {
+                        throw new Error(`Firmware upgrade required. Current: ${versionToString(ver)}, Required: ${versionToString(MINIMUM_VERSION)}`);
+                    }
+                    
+                    addLog('Device ready', 'success');
+                    showToast('Connected to MA-1', 'success');
+                    
+                    setVersion(ver);
+                    setConnected(true);
+                    setStatusMessage('');
+                } catch (error) {
+                    let errorMsg = error.message;
+                    let troubleshooting = '';
+                    
+                    if (error.message.includes('Failed to open serial port') || error.message.includes('port may be in use')) {
+                        troubleshooting = '\n\nTroubleshooting:\n• Close any other apps using the port (Arduino IDE, PuTTY, other serial monitors)\n• Unplug and replug the USB cable, wait 3 seconds\n• Try a different USB port\n• On Mac: check if another process has the port (lsof | grep usbserial)';
+                    } else if (error.message.includes('No port selected')) {
+                        troubleshooting = '\n\nYou must select a port from the browser dialog to connect.';
+                    } else if (error.message.includes('Access denied') || error.message.includes('permission')) {
+                        troubleshooting = '\n\nTroubleshooting:\n• On Linux: add your user to the dialout group\n• On Mac: check System Preferences > Security & Privacy\n• Try running browser as administrator (Windows)';
+                    } else if (error.message.includes('Could not get firmware version')) {
+                        // Already has troubleshooting in the message
+                    }
+                    
+                    addLog(`Connection failed: ${errorMsg}${troubleshooting}`, 'error');
+                    showToast('Connection failed - see log for details', 'error');
+                    await serialRef.current.disconnect();
+                    setConnected(false);
+                    setVersion(null);
+                } finally {
+                    setBusy(false);
+                }
+            };
+
+            const handleDisconnect = async () => {
+                serialRef.current.echoEnabled = true; // Restore in case mid-download
+                await serialRef.current.disconnect();
+                setConnected(false);
+                setVersion(null);
+                setBusy(false);
+                setStatusMessage('');
+                setProgress(0);
+                addLog('Disconnected');
+            };
+
+            const handleDownload = async () => {
+                const MAX_DOWNLOAD_RETRIES = 3;
+                const MAX_CONSECUTIVE_TIMEOUTS = 15;
+                const LINE_TIMEOUT = 3000;         // 3s per line (was 2s)
+                const OVERALL_TIMEOUT = 600000;     // 10 minutes overall
+                const STALL_RECOVERY_DELAY = 500;
+                
+                let downloadAttempt = 0;
+                let finalLines = null;
+                
+                while (downloadAttempt < MAX_DOWNLOAD_RETRIES && !finalLines) {
+                    downloadAttempt++;
+                    
+                    try {
+                        setBusy(true);
+                        setProgress(0);
+                        
+                        if (downloadAttempt > 1) {
+                            setStatusMessage(`Download retry ${downloadAttempt}/${MAX_DOWNLOAD_RETRIES}...`);
+                            addLog(`Download attempt ${downloadAttempt}/${MAX_DOWNLOAD_RETRIES}...`, 'warning');
+                            
+                            // Re-stabilize the device before retry
+                            await new Promise(r => setTimeout(r, 500));
+                            serialRef.current.clearLines();
+                            serialRef.current.readBuffer = '';
+                            
+                            try {
+                                await serialRef.current.forceSuspendedMode();
+                            } catch (e) {
+                                addLog(`Could not halt device: ${e.message}`, 'warning');
+                            }
+                            await new Promise(r => setTimeout(r, 300));
+                        } else {
+                            setStatusMessage('Downloading data...');
+                            addLog('Starting data download...');
+                        }
+                        
+                        // Verify connection is alive before starting download
+                        if (!serialRef.current.isConnected) {
+                            throw new Error('Device is not connected');
+                        }
+                        
+                        // Ensure device is in a clean state
+                        await serialRef.current.forceSuspendedMode();
+                        
+                        const numPages = await serialRef.current.getNumPagesData();
+                        if (numPages === null && downloadAttempt === 1) {
+                            addLog('Could not determine page count — download will proceed without progress tracking', 'warning');
+                        } else if (numPages !== null) {
+                            addLog(`Found ${numPages} pages of data`);
+                        }
+                        
+                        if (numPages === 0) {
+                            addLog('Device reports 0 pages of data', 'warning');
+                            showToast('No data on device', 'warning');
+                            finalLines = [];
+                            break;
+                        }
+                        
+                        // Clear buffers before starting dump
+                        serialRef.current.clearLines();
+                        serialRef.current.readBuffer = '';
+                        
+                        await serialRef.current.write('dump_data_paged\n');
+                        serialRef.current.echoEnabled = false;
+                        
+                        const lines = [];
+                        const startTime = Date.now();
+                        let consecutiveTimeouts = 0;
+                        let lastPageSeen = -1;
+                        let lastProgressTime = Date.now();
+                        
+                        let done = false;
+                        while (!done) {
+                            // Check if device is still connected
+                            if (!serialRef.current.isConnected) {
+                                throw new Error('Device disconnected during download');
+                            }
+                            
+                            const line = await serialRef.current.getLine(LINE_TIMEOUT);
+                            
+                            if (!line) {
+                                consecutiveTimeouts++;
+                                
+                                // Check overall timeout
+                                if (Date.now() - startTime > OVERALL_TIMEOUT) {
+                                    throw new Error('Download exceeded maximum time (10 minutes)');
+                                }
+                                
+                                // If we've had too many consecutive timeouts, the device may have stalled
+                                if (consecutiveTimeouts >= MAX_CONSECUTIVE_TIMEOUTS) {
+                                    const stallDuration = ((consecutiveTimeouts * LINE_TIMEOUT) / 1000).toFixed(0);
+                                    addLog(`No data received for ${stallDuration}s — device may have stalled`, 'warning');
+                                    
+                                    // If we have some data, maybe the device finished without the end marker
+                                    if (lines.length > 0 && consecutiveTimeouts >= MAX_CONSECUTIVE_TIMEOUTS * 2) {
+                                        addLog(`Assuming download complete after extended silence (${lines.length} lines received)`, 'warning');
+                                        done = true;
+                                        break;
+                                    }
+                                    
+                                    // Try to prod the device
+                                    if (consecutiveTimeouts === MAX_CONSECUTIVE_TIMEOUTS) {
+                                        addLog('Attempting stall recovery — sending newline to device...', 'warning');
+                                        try {
+                                            await serialRef.current._safeWrite('\n');
+                                        } catch (e) {
+                                            throw new Error('Cannot communicate with device during stall recovery');
+                                        }
+                                    }
+                                    
+                                    // Give up on this attempt after extended silence
+                                    if (consecutiveTimeouts >= MAX_CONSECUTIVE_TIMEOUTS * 3) {
+                                        throw new Error(`Device stalled (no data for ${stallDuration}s). ${lines.length} lines received before stall.`);
+                                    }
+                                }
+                                
+                                continue;
+                            }
+                            
+                            // Got data — reset timeout counter
+                            consecutiveTimeouts = 0;
+                            lastProgressTime = Date.now();
+                            
+                            if (line.startsWith('Page')) {
+                                const match = line.match(/Page (\d+)/);
+                                if (match) {
+                                    const currentPage = parseInt(match[1]);
+                                    lastPageSeen = currentPage;
+                                    if (numPages) {
+                                        setProgress(Math.min(99, (currentPage / numPages) * 100));
+                                    }
+                                }
+                            } else if (line.includes('No data found at page')) {
+                                done = true;
+                            } else if (line.includes('ERROR') || line.includes('error')) {
+                                addLog(`Device error during download: ${line}`, 'warning');
+                                // Don't immediately fail — might be a recoverable warning
+                            } else {
+                                // Validate line format - should have commas for data lines
+                                // Skip obviously truncated/corrupted lines
+                                if (line.includes(',') || line.startsWith('SerialNo') || line.startsWith('Calibrated') || line === 'timestamp,value,type') {
+                                    lines.push(line);
+                                } else if (line.trim().length > 0 && !line.startsWith('Page')) {
+                                    addLog(`Skipping malformed line: ${line.substring(0, 30)}...`, 'warning');
+                                }
+                            }
+                        }
+                        
+                        serialRef.current.echoEnabled = true;
+                        
+                        if (lines.length === 0 && downloadAttempt < MAX_DOWNLOAD_RETRIES) {
+                            addLog(`Download returned 0 data lines — retrying...`, 'warning');
+                            continue; // Retry the download
+                        }
+                        
+                        finalLines = lines;
+                        addLog(`Downloaded ${lines.length} raw lines in ${((Date.now() - startTime) / 1000).toFixed(1)}s`, 'success');
+                        
+                    } catch (error) {
+                        serialRef.current.echoEnabled = true;
+                        
+                        if (downloadAttempt < MAX_DOWNLOAD_RETRIES && serialRef.current.isConnected) {
+                            addLog(`Download attempt ${downloadAttempt} failed: ${error.message}`, 'warning');
+                            addLog('Will retry after brief recovery pause...', 'warning');
+                            await new Promise(r => setTimeout(r, 1000));
+                        } else {
+                            addLog(`Download failed: ${error.message}`, 'error');
+                            showToast(`Download failed: ${error.message}`, 'error');
+                            setBusy(false);
+                            setStatusMessage('');
+                            setProgress(0);
+                            return;
+                        }
+                    }
+                }
+                
+                // Process the downloaded data
+                if (!finalLines || finalLines.length === 0) {
+                    addLog('No data lines received after all attempts', 'warning');
+                    showToast('Download complete but no data received', 'warning');
+                    setBusy(false);
+                    setStatusMessage('');
+                    setProgress(0);
+                    return;
+                }
+                
+                try {
+                    // Process data
+                    const { hgData: processedHg, fileHeader, calHeader } = processFileLines(finalLines);
+                    const { twa, oshaTwa, sessions: sessionInfo } = calculateTWA(processedHg);
+                    
+                    setHgData(processedHg);
+                    setTwaData(twa);
+                    setOshaTwaData(oshaTwa);
+                    setSessions(sessionInfo);
+                    setDataDownloaded(true);
+                    
+                    if (processedHg.length > 0) {
+                        addLog(`Processed ${processedHg.length} mercury readings in ${sessionInfo.length} session(s)`, 'success');
+                        const finalTwa = oshaTwa[oshaTwa.length - 1]?.value || 0;
+                        addLog(`Final 8hr TWA: ${finalTwa.toFixed(4)} mg/m³`);
+                        
+                        // Store data for worker assignment after save
+                        setPendingDataForWorker(processedHg);
+                        
+                        // Create CSV content with mercury data
+                        const csvHeader = 'Date,Time,Timezone,Hg Conc. (mg/m3)\n';
+                        const csvRows = processedHg.map(d => {
+                            const date = new Date(d.time * 1000);
+                            const dateStr = date.toLocaleDateString('en-US');
+                            const timeStr = date.toLocaleTimeString('en-US', { 
+                                hour: '2-digit', 
+                                minute: '2-digit', 
+                                hour12: false 
+                            });
+                            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                            return `${dateStr},${timeStr},${tz},${d.value}`;
+                        }).join('\n');
+                        
+                        // Add file header and calibration info if available
+                        let fileContent = '';
+                        if (fileHeader && fileHeader !== 'None') {
+                            fileContent += fileHeader + '\n';
+                        }
+                        if (calHeader && calHeader !== 'None') {
+                            // Parse calibration timestamp if present
+                            const calMatch = calHeader.match(/Calibrated (\d+)/);
+                            if (calMatch) {
+                                const calDate = new Date(parseInt(calMatch[1]) * 1000);
+                                fileContent += `Calibrated on ${calDate.toLocaleDateString('en-US')}\n`;
+                            } else {
+                                fileContent += calHeader + '\n';
+                            }
+                        }
+                        fileContent += csvHeader + csvRows;
+                        
+                        // Save to localStorage for recovery before attempting file downloads
+                        saveRecoveryData(finalLines, fileContent, fileHeader);
+                        
+                        // Generate filename with date, time, and serial number
+                        const defaultFilename = generateFilename(fileHeader, 'csv', 'Hg');
+                        
+                        // Use direct download - showSaveFilePicker fails after long downloads
+                        // because the user gesture is considered "stale" by Chrome
+                        downloadFallback(fileContent, defaultFilename);
+                        addLog(`Saved mercury data to ${defaultFilename}`, 'success');
+                        showToast(`Downloaded ${processedHg.length} readings`, 'success');
+                        
+                        // Also save raw log file
+                        const rawLogContent = finalLines.join('\n');
+                        const rawLogFilename = generateFilename(fileHeader, 'txt', 'Log');
+                        downloadFallback(rawLogContent, rawLogFilename);
+                        addLog(`Saved raw log to ${rawLogFilename}`, 'success');
+                        
+                        // Clear recovery data after successful downloads
+                        clearRecoveryData();
+                        
+                        // Show worker ID modal for cartridge tracking
+                        setShowWorkerModal(true);
+                    } else {
+                        addLog('No mercury data found in download', 'warning');
+                        showToast('Download complete but no mercury data found', 'warning');
+                    }
+                    
+                    setProgress(100);
+                    setStatusMessage('Download complete');
+                    
+                } catch (error) {
+                    addLog(`Download failed: ${error.message}`, 'error');
+                    showToast(`Download failed: ${error.message}`, 'error');
+                    serialRef.current.echoEnabled = true;
+                } finally {
+                    setBusy(false);
+                    setTimeout(() => {
+                        setStatusMessage('');
+                        setProgress(0);
+                    }, 2000);
+                }
+            };
+            
+            // Fallback download function for browsers without File System Access API
+            const downloadFallback = (content, filename) => {
+                const blob = new Blob([content], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.click();
+                URL.revokeObjectURL(url);
+            };
+
+            const handleTimesync = async () => {
+                try {
+                    if (!serialRef.current.isConnected) throw new Error('Device is not connected');
+                    setBusy(true);
+                    setStatusMessage('Syncing time...');
+                    
+                    const timestamp = getCurrentUTCTimestamp();
+                    await serialRef.current.write(`set_time ${timestamp}\n`);
+                    
+                    if (await serialRef.current.expect('Time successfully set', 5000)) {
+                        const timeStr = new Date().toLocaleString();
+                        addLog(`Time synced to ${timeStr}`, 'success');
+                        showToast(`Device time synced to ${timeStr}`, 'success');
+                    } else {
+                        throw new Error('Timesync response timeout');
+                    }
+                    
+                    setShowTimesyncModal(false);
+                } catch (error) {
+                    addLog(`Timesync failed: ${error.message}`, 'error');
+                    showToast(`Timesync failed: ${error.message}`, 'error');
+                } finally {
+                    setBusy(false);
+                    setStatusMessage('');
+                }
+            };
+
+            const handleSetAlarms = async (lowAlarm, highAlarm, twaAlarm) => {
+                try {
+                    if (!serialRef.current.isConnected) throw new Error('Device is not connected');
+                    setBusy(true);
+                    setStatusMessage('Setting alarms...');
+                    
+                    // Validate inputs
+                    const lowVal = parseFloat(lowAlarm);
+                    const highVal = parseFloat(highAlarm);
+                    const twaVal = parseFloat(twaAlarm);
+                    
+                    if (isNaN(lowVal) || isNaN(highVal) || isNaN(twaVal)) {
+                        throw new Error('Invalid alarm values');
+                    }
+                    
+                    await serialRef.current.write(`set_alarm 0 ${lowAlarm}\n`);
+                    await serialRef.current.write(`set_alarm 1 ${highAlarm}\n`);
+                    await serialRef.current.write(`set_alarm 2 ${twaAlarm}\n`);
+                    
+                    if (await serialRef.current.expect('Alarm', 5000)) {
+                        addLog(`Alarms set: LOW=${lowAlarm}, HIGH=${highAlarm}, 8hr TWA=${twaAlarm} mg/m³`, 'success');
+                        showToast(`Alarms updated successfully!\nLow: ${lowAlarm} | High: ${highAlarm} | TWA: ${twaAlarm} mg/m³`, 'success');
+                        // Update current alarms state
+                        setCurrentAlarms({ low: lowAlarm, high: highAlarm, twa: twaAlarm });
+                    } else {
+                        throw new Error('Alarm update response timeout');
+                    }
+                    
+                    setShowAlarmModal(false);
+                } catch (error) {
+                    addLog(`Alarm update failed: ${error.message}`, 'error');
+                    showToast(`Alarm update failed: ${error.message}`, 'error');
+                } finally {
+                    setBusy(false);
+                    setStatusMessage('');
+                }
+            };
+
+            // Open alarm modal and fetch current alarm levels from device
+            const openAlarmModal = async () => {
+                setShowAlarmModal(true);
+                setAlarmLoading(true);
+                
+                try {
+                    if (!serialRef.current.isConnected) {
+                        throw new Error('Device not connected');
+                    }
+                    
+                    addLog('Reading current alarm levels from device...');
+                    const alarms = await serialRef.current.getCurrentAlarms();
+                    
+                    if (alarms.low !== null || alarms.high !== null || alarms.twa !== null) {
+                        setCurrentAlarms({
+                            low: alarms.low !== null ? alarms.low.toString() : '0.1',
+                            high: alarms.high !== null ? alarms.high.toString() : '1.0',
+                            twa: alarms.twa !== null ? alarms.twa.toString() : '0.025',
+                        });
+                        addLog(`Current alarms: LOW=${alarms.low}, HIGH=${alarms.high}, TWA=${alarms.twa} mg/m³`, 'success');
+                    } else {
+                        addLog('Could not read alarm levels, using defaults', 'warning');
+                    }
+                } catch (error) {
+                    addLog(`Failed to read alarms: ${error.message}`, 'warning');
+                } finally {
+                    setAlarmLoading(false);
+                }
+            };
+
+            // Quick Sync: Download data, erase (if successful), then sync time
+            const handleQuickSync = async () => {
+                if (!serialRef.current.isConnected) {
+                    showToast('Device not connected', 'error');
+                    return;
+                }
+                
+                addLog('Starting Quick Sync: Download → Erase → Time Sync', 'info');
+                showToast('Starting Quick Sync...', 'info');
+                
+                let downloadSuccess = false;
+                let fileHeader = null;
+                
+                // Step 1: Download data
+                try {
+                    setBusy(true);
+                    setProgress(0);
+                    setStatusMessage('Quick Sync: Preparing device...');
+                    addLog('Step 1/3: Downloading data...');
+                    
+                    // Halt the device before download to prevent data corruption
+                    await serialRef.current.forceSuspendedMode();
+                    await new Promise(r => setTimeout(r, 200));
+                    
+                    setStatusMessage('Quick Sync: Downloading data...');
+                    
+                    const numPages = await serialRef.current.getNumPagesData();
+                    addLog(`Found ${numPages || 'unknown'} pages of data`);
+                    
+                    await serialRef.current.write('dump_data_paged\n');
+                    serialRef.current.echoEnabled = false;
+                    
+                    const lines = [];
+                    const startTime = Date.now();
+                    let consecutiveTimeouts = 0;
+                    const MAX_CONSECUTIVE_TIMEOUTS = 10;
+                    
+                    let done = false;
+                    while (!done) {
+                        const line = await serialRef.current.getLine(3000);
+                        
+                        if (!line) {
+                            consecutiveTimeouts++;
+                            if (consecutiveTimeouts > MAX_CONSECUTIVE_TIMEOUTS) {
+                                throw new Error('Download stalled - too many consecutive timeouts');
+                            }
+                            if (Date.now() - startTime > 600000) {
+                                throw new Error('Download timeout');
+                            }
+                            continue;
+                        }
+                        
+                        consecutiveTimeouts = 0; // Reset on successful read
+                        
+                        if (line.startsWith('Page')) {
+                            const match = line.match(/Page (\d+)/);
+                            if (match && numPages) {
+                                const currentPage = parseInt(match[1]);
+                                setProgress(Math.min(33, (currentPage / numPages) * 33));
+                            }
+                        } else if (line.includes('No data found at page')) {
+                            done = true;
+                        } else {
+                            // Validate line format - should have commas for data lines
+                            // Skip obviously truncated/corrupted lines
+                            if (line.includes(',') || line.startsWith('SerialNo') || line.startsWith('Calibrated') || line === 'timestamp,value,type') {
+                                lines.push(line);
+                            } else if (line.trim().length > 0) {
+                                addLog(`Skipping malformed line: ${line.substring(0, 30)}...`, 'warning');
+                            }
+                        }
+                    }
+                    
+                    serialRef.current.echoEnabled = true;
+                    addLog(`Downloaded ${lines.length} raw lines`, 'success');
+                    
+                    // Process data
+                    const { hgData: processedHg, fileHeader, calHeader } = processFileLines(lines);
+                    const { twa, oshaTwa, sessions: sessionInfo } = calculateTWA(processedHg);
+                    
+                    setHgData(processedHg);
+                    setTwaData(twa);
+                    setOshaTwaData(oshaTwa);
+                    setSessions(sessionInfo);
+                    setDataDownloaded(true);
+                    
+                    if (processedHg.length > 0) {
+                        addLog(`Processed ${processedHg.length} mercury readings in ${sessionInfo.length} session(s)`, 'success');
+                        
+                        // Create and save CSV
+                        const csvHeader = 'Date,Time,Timezone,Hg Conc. (mg/m3)\n';
+                        const csvRows = processedHg.map(d => {
+                            const date = new Date(d.time * 1000);
+                            const dateStr = date.toLocaleDateString('en-US');
+                            const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+                            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                            return `${dateStr},${timeStr},${tz},${d.value}`;
+                        }).join('\n');
+                        
+                        let fileContent = '';
+                        if (fileHeader && fileHeader !== 'None') fileContent += fileHeader + '\n';
+                        if (calHeader && calHeader !== 'None') {
+                            const calMatch = calHeader.match(/Calibrated (\d+)/);
+                            if (calMatch) {
+                                const calDate = new Date(parseInt(calMatch[1]) * 1000);
+                                fileContent += `Calibrated on ${calDate.toLocaleDateString('en-US')}\n`;
+                            } else {
+                                fileContent += calHeader + '\n';
+                            }
+                        }
+                        fileContent += csvHeader + csvRows;
+                        
+                        // Save to localStorage for recovery before attempting file downloads
+                        // This protects against user blocking the "multiple downloads" prompt
+                        saveRecoveryData(lines, fileContent, fileHeader);
+                        
+                        // Auto-save without prompts for Quick Sync
+                        // Save mercury data CSV
+                        const hgFilename = generateFilename(fileHeader, 'csv', 'Hg');
+                        downloadFallback(fileContent, hgFilename);
+                        addLog(`Saved mercury data to ${hgFilename}`, 'success');
+                        
+                        // Also save raw log file
+                        const rawLogContent = lines.join('\n');
+                        const logFilename = generateFilename(fileHeader, 'txt', 'Log');
+                        downloadFallback(rawLogContent, logFilename);
+                        addLog(`Saved raw log to ${logFilename}`, 'success');
+                        
+                        // Clear recovery data after successful downloads
+                        clearRecoveryData();
+                        
+                        downloadSuccess = true;
+                    } else {
+                        // No mercury data, but still save the raw log if there are lines
+                        if (lines.length > 0) {
+                            saveRecoveryData(lines, '', fileHeader);
+                            const rawLogContent = lines.join('\n');
+                            const logFilename = generateFilename(fileHeader, 'txt', 'Log');
+                            downloadFallback(rawLogContent, logFilename);
+                            addLog(`Saved raw log to ${logFilename}`, 'success');
+                            clearRecoveryData();
+                        }
+                        addLog('No mercury data found in download', 'warning');
+                        downloadSuccess = true; // Still consider it successful if device had no data
+                    }
+                    
+                    setProgress(33);
+                    
+                } catch (error) {
+                    addLog(`Download failed: ${error.message}`, 'error');
+                    showToast(`Quick Sync failed during download: ${error.message}`, 'error');
+                    serialRef.current.echoEnabled = true;
+                    setBusy(false);
+                    setStatusMessage('');
+                    setProgress(0);
+                    return;
+                }
+                
+                // Step 2: Erase (only if download was successful)
+                if (downloadSuccess) {
+                    try {
+                        setStatusMessage('Quick Sync: Erasing data...');
+                        addLog('Step 2/3: Erasing data (~35 seconds)...');
+                        
+                        const eraseStart = Date.now();
+                        const ERASE_ESTIMATE_MS = 35000;
+                        
+                        const eraseTimer = setInterval(() => {
+                            const elapsed = Date.now() - eraseStart;
+                            const pct = 33 + Math.min(33, (elapsed / ERASE_ESTIMATE_MS) * 33);
+                            const remaining = Math.max(0, Math.ceil((ERASE_ESTIMATE_MS - elapsed) / 1000));
+                            setProgress(pct);
+                            setStatusMessage(`Quick Sync: Erasing... ~${remaining}s`);
+                        }, 500);
+                        
+                        await serialRef.current.write('erase_all_data\n');
+                        
+                        if (await serialRef.current.expect('Flash chip erased', 60000)) {
+                            clearInterval(eraseTimer);
+                            addLog('Data erased successfully', 'success');
+                            setProgress(66);
+                        } else {
+                            clearInterval(eraseTimer);
+                            throw new Error('Erase timeout');
+                        }
+                    } catch (error) {
+                        addLog(`Erase failed: ${error.message}`, 'error');
+                        showToast(`Quick Sync: Erase failed, but data was saved`, 'warning');
+                        // Continue to time sync anyway
+                    }
+                }
+                
+                // Step 3: Time sync
+                try {
+                    setStatusMessage('Quick Sync: Syncing time...');
+                    addLog('Step 3/3: Syncing device time...');
+                    setProgress(80);
+                    
+                    const timestamp = getCurrentUTCTimestamp();
+                    await serialRef.current.write(`set_time ${timestamp}\n`);
+                    
+                    if (await serialRef.current.expect('Time successfully set', 5000)) {
+                        const timeStr = new Date().toLocaleString();
+                        addLog(`Time synced to ${timeStr}`, 'success');
+                        setProgress(100);
+                    } else {
+                        throw new Error('Time sync timeout');
+                    }
+                    
+                    showToast('Quick Sync completed successfully!', 'success');
+                    addLog('Quick Sync completed!', 'success');
+                    
+                } catch (error) {
+                    addLog(`Time sync failed: ${error.message}`, 'error');
+                    showToast('Quick Sync: Time sync failed, but data was saved', 'warning');
+                }
+                
+                setBusy(false);
+                setStatusMessage('');
+                setTimeout(() => setProgress(0), 2000);
+            };
+
+            const handleErase = async () => {
+                setShowEraseModal(false);
+                try {
+                    if (!serialRef.current.isConnected) throw new Error('Device is not connected');
+                    setBusy(true);
+                    setProgress(0);
+                    setStatusMessage('Preparing device...');
+                    addLog('Starting data erase (~35 seconds)...', 'warning');
+                    
+                    // Halt the device before erase
+                    await serialRef.current.forceSuspendedMode();
+                    await new Promise(r => setTimeout(r, 200));
+                    
+                    setStatusMessage('Erasing data... ~35s remaining');
+                    
+                    const eraseStart = Date.now();
+                    const ERASE_ESTIMATE_MS = 35000;
+                    
+                    // Update progress bar and countdown during erase
+                    const eraseTimer = setInterval(() => {
+                        const elapsed = Date.now() - eraseStart;
+                        const pct = Math.min(95, (elapsed / ERASE_ESTIMATE_MS) * 100);
+                        const remaining = Math.max(0, Math.ceil((ERASE_ESTIMATE_MS - elapsed) / 1000));
+                        setProgress(pct);
+                        setStatusMessage(`Erasing data... ~${remaining}s remaining`);
+                    }, 500);
+                    
+                    await serialRef.current.write('erase_all_data\n');
+                    
+                    if (await serialRef.current.expect('Flash chip erased', 60000)) {
+                        clearInterval(eraseTimer);
+                        setProgress(100);
+                        setStatusMessage('Erase complete');
+                        addLog('Data erased successfully', 'success');
+                        showToast('All device data has been erased', 'success');
+                        setDataDownloaded(false);
+                        setHgData([]);
+                        setTwaData([]);
+                        setOshaTwaData([]);
+                    } else {
+                        clearInterval(eraseTimer);
+                        throw new Error('Erase timeout');
+                    }
+                } catch (error) {
+                    addLog(`Erase failed: ${error.message}`, 'error');
+                    showToast(`Erase failed: ${error.message}`, 'error');
+                } finally {
+                    setBusy(false);
+                    setTimeout(() => {
+                        setStatusMessage('');
+                        setProgress(0);
+                    }, 2000);
+                }
+            };
+
+            const handleReset = async () => {
+                try {
+                    if (!serialRef.current.isConnected) throw new Error('Device is not connected');
+                    setBusy(true);
+                    setStatusMessage('Resetting device...');
+                    
+                    await serialRef.current.write('reset\n');
+                    
+                    if (await serialRef.current.expect('Reset', 10000) || 
+                        await serialRef.current.expect('reset', 10000)) {
+                        addLog('Device reset successfully', 'success');
+                    } else {
+                        addLog('Reset command sent (check device)', 'warning');
+                    }
+                } catch (error) {
+                    addLog(`Reset failed: ${error.message}`, 'error');
+                } finally {
+                    setBusy(false);
+                    setStatusMessage('');
+                }
+            };
+
+            const handleLoadFile = async () => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.txt,.csv';
+                
+                input.onchange = async (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    
+                    try {
+                        addLog(`Loading file: ${file.name}`);
+                        const text = await file.text();
+                        const lines = text.split('\n');
+                        
+                        const { hgData: processedHg } = processFileLines(lines);
+                        const { twa, oshaTwa, sessions: sessionInfo } = calculateTWA(processedHg);
+                        
+                        setHgData(processedHg);
+                        setTwaData(twa);
+                        setOshaTwaData(oshaTwa);
+                        setSessions(sessionInfo);
+                        
+                        if (processedHg.length > 0) {
+                            addLog(`Loaded ${processedHg.length} mercury readings in ${sessionInfo.length} session(s)`, 'success');
+                            const finalTwa = oshaTwa[oshaTwa.length - 1]?.value || 0;
+                            addLog(`Final 8hr TWA: ${finalTwa.toFixed(4)} mg/m³`);
+                            
+                            // Store data and show worker modal
+                            setPendingDataForWorker(processedHg);
+                            setShowWorkerModal(true);
+                        } else {
+                            addLog('No mercury data found in file', 'warning');
+                        }
+                    } catch (error) {
+                        addLog(`Failed to load file: ${error.message}`, 'error');
+                    }
+                };
+                
+                input.click();
+            };
+
+            // Stats calculation
+            const stats = {
+                readings: hgData.length,
+                sessionCount: sessions.length,
+                maxConc: hgData.length > 0 ? Math.max(...hgData.map(d => d.value)).toFixed(4) : '--',
+                finalTwa: oshaTwaData.length > 0 ? oshaTwaData[oshaTwaData.length - 1].value.toFixed(4) : '--',
+                duration: hgData.length > 1 ? 
+                    Math.round((hgData[hgData.length - 1].time - hgData[0].time) / 60) : 0,
+            };
+
+            return (
+                <div>
+                    <Header
+                        connected={connected}
+                        version={version}
+                        onConnect={handleConnect}
+                        onDisconnect={handleDisconnect}
+                    />
+
+                    {/* Toast Notifications */}
+                    <ToastContainer toasts={toasts} removeToast={removeToast} />
+
+                    {!webSerialSupported && (
+                        <div style={{ 
+                            background: 'rgba(239, 68, 68, 0.15)', 
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            padding: '16px 32px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                        }}>
+                            <Icons.AlertTriangle />
+                            <span>
+                                Web Serial API not supported. Please use Chrome or Edge browser.
+                                You can still load and plot existing data files.
+                            </span>
+                        </div>
+                    )}
+
+                    <main style={styles.main}>
+                        <div style={styles.grid}>
+                            {/* Left Panel - Controls */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                {/* Device Actions */}
+                                <div style={styles.card}>
+                                    <div style={styles.cardHeader}>
+                                        <span style={styles.cardTitle}>
+                                            <Icons.Usb />
+                                            Device Actions
+                                        </span>
+                                    </div>
+                                    <div style={styles.cardContent}>
+                                        {statusMessage && (
+                                            <div style={{ 
+                                                marginBottom: '16px', 
+                                                padding: '12px', 
+                                                background: 'var(--bg-secondary)',
+                                                borderRadius: '8px',
+                                            }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                                    {busy && <div style={styles.spinner} />}
+                                                    <span style={{ fontSize: '13px', color: 'var(--accent-gold)' }}>{statusMessage}</span>
+                                                </div>
+                                                {progress > 0 && (
+                                                    <div style={styles.progressBar}>
+                                                        <div style={styles.progressFill(progress)} />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                        
+                                        <div style={styles.actionGrid}>
+                                            <ActionButton
+                                                icon={Icons.Download}
+                                                label="Download"
+                                                onClick={handleDownload}
+                                                disabled={!connected || busy}
+                                                variant="primary"
+                                            />
+                                            <ActionButton
+                                                icon={Icons.Bell}
+                                                label="Set Alarms"
+                                                onClick={openAlarmModal}
+                                                disabled={!connected || busy}
+                                            />
+                                            <ActionButton
+                                                icon={Icons.Clock}
+                                                label="Sync Time"
+                                                onClick={() => setShowTimesyncModal(true)}
+                                                disabled={!connected || busy}
+                                            />
+                                            <ActionButton
+                                                icon={Icons.RefreshCw}
+                                                label="Reset"
+                                                onClick={handleReset}
+                                                disabled={!connected || busy}
+                                            />
+                                        </div>
+                                        
+                                        <div style={{ marginTop: '12px' }}>
+                                            <ActionButton
+                                                icon={Icons.Zap}
+                                                label="Quick Sync"
+                                                onClick={handleQuickSync}
+                                                disabled={!connected || busy}
+                                                variant="success"
+                                            />
+                                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', textAlign: 'center' }}>
+                                                Download → Erase → Set Clock
+                                            </div>
+                                        </div>
+                                        
+                                        <div style={{ marginTop: '12px' }}>
+                                            <ActionButton
+                                                icon={Icons.Trash}
+                                                label="Erase All Data"
+                                                onClick={() => setShowEraseModal(true)}
+                                                disabled={!connected || busy}
+                                                variant="danger"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* File Operations */}
+                                <div style={styles.card}>
+                                    <div style={styles.cardHeader}>
+                                        <span style={styles.cardTitle}>
+                                            <Icons.Chart />
+                                            Data Files
+                                        </span>
+                                    </div>
+                                    <div style={styles.cardContent}>
+                                        <ActionButton
+                                            icon={Icons.Upload}
+                                            label="Load Data File"
+                                            onClick={handleLoadFile}
+                                            disabled={busy}
+                                            variant="secondary"
+                                        />
+                                        {hasRecoveryData && (
+                                            <div style={{ marginTop: '12px' }}>
+                                                <div style={{ 
+                                                    fontSize: '11px', 
+                                                    color: 'var(--accent-orange)', 
+                                                    marginBottom: '8px',
+                                                    padding: '8px',
+                                                    background: 'rgba(249, 115, 22, 0.1)',
+                                                    borderRadius: '6px',
+                                                    border: '1px solid rgba(249, 115, 22, 0.2)',
+                                                }}>
+                                                    ⚠️ Unsaved download data found in browser storage
+                                                </div>
+                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                    <ActionButton
+                                                        icon={Icons.Download}
+                                                        label="Recover"
+                                                        onClick={handleRecoverData}
+                                                        disabled={busy}
+                                                        variant="primary"
+                                                    />
+                                                    <ActionButton
+                                                        icon={Icons.Trash}
+                                                        label="Discard"
+                                                        onClick={clearRecoveryData}
+                                                        disabled={busy}
+                                                        variant="danger"
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Stats */}
+                                <div style={styles.card}>
+                                    <div style={styles.cardHeader}>
+                                        <span style={styles.cardTitle}>
+                                            <Icons.Info />
+                                            Session Statistics
+                                        </span>
+                                    </div>
+                                    <div style={styles.cardContent}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                            <div style={styles.stat}>
+                                                <span style={styles.statLabel}>Readings</span>
+                                                <span style={{ ...styles.statValue, color: 'var(--accent-gold)' }}>
+                                                    {stats.readings}
+                                                </span>
+                                            </div>
+                                            <div style={styles.stat}>
+                                                <span style={styles.statLabel}>Sessions</span>
+                                                <span style={{ ...styles.statValue, color: 'var(--accent-cyan)' }}>
+                                                    {stats.sessionCount || '--'}
+                                                </span>
+                                            </div>
+                                            <div style={styles.stat}>
+                                                <span style={styles.statLabel}>Max Conc.</span>
+                                                <span style={{ ...styles.statValue, fontSize: '18px', color: 'var(--accent-orange)' }}>
+                                                    {stats.maxConc}
+                                                </span>
+                                            </div>
+                                            <div style={styles.stat}>
+                                                <span style={styles.statLabel}>8hr TWA</span>
+                                                <span style={{ ...styles.statValue, fontSize: '18px', color: 'var(--accent-green)' }}>
+                                                    {stats.finalTwa}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        {sessions.length > 1 && (
+                                            <div style={{ 
+                                                marginTop: '12px', 
+                                                padding: '10px', 
+                                                background: 'var(--bg-secondary)', 
+                                                borderRadius: '8px',
+                                                fontSize: '12px',
+                                                color: 'var(--text-secondary)',
+                                            }}>
+                                                <div style={{ fontWeight: '600', marginBottom: '6px', color: 'var(--text-primary)' }}>
+                                                    Session Details
+                                                </div>
+                                                {sessions.map((s, i) => (
+                                                    <div key={i} style={{ 
+                                                        display: 'flex', 
+                                                        justifyContent: 'space-between',
+                                                        padding: '4px 0',
+                                                        borderBottom: i < sessions.length - 1 ? '1px solid var(--border)' : 'none',
+                                                    }}>
+                                                        <span>Session {i + 1}: {s.dataPoints} pts</span>
+                                                        <span style={{ color: 'var(--accent-green)' }}>
+                                                            TWA: {s.finalTwa.toFixed(4)}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Cartridge Tracker */}
+                                <div style={styles.card}>
+                                    <div style={styles.cardHeader}>
+                                        <span style={styles.cardTitle}>
+                                            <Icons.Shield />
+                                            Respirator Cartridge Tracker
+                                        </span>
+                                    </div>
+                                    <div style={styles.cardContent}>
+                                        <CartridgeTracker 
+                                            cartridgeData={cartridgeData}
+                                            onCartridgeDataChange={handleCartridgeDataChange}
+                                            addLog={addLog}
+                                            showToast={showToast}
+                                        />
+                                        <div style={{ 
+                                            marginTop: '12px', 
+                                            padding: '10px', 
+                                            background: 'var(--bg-secondary)', 
+                                            borderRadius: '8px',
+                                            fontSize: '11px',
+                                            color: 'var(--text-muted)',
+                                            lineHeight: '1.5',
+                                        }}>
+                                            OSHA minimum cartridge capacity: {OSHA_CARTRIDGE_CAPACITY} mg·hr/m³. 
+                                            Cumulative dose is tracked across multiple downloads per worker per cartridge.
+                                            Start a new cartridge session when cartridges are replaced.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Activity Log */}
+                                <div style={styles.card}>
+                                    <div style={styles.cardHeader}>
+                                        <span style={styles.cardTitle}>Activity Log</span>
+                                    </div>
+                                    <div style={styles.cardContent}>
+                                        <LogPanel logs={logs} />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Right Panel - Chart */}
+                            <div style={styles.card}>
+                                <div style={styles.cardHeader}>
+                                    <span style={styles.cardTitle}>
+                                        <Icons.Chart />
+                                        Mercury Concentration
+                                    </span>
+                                    {hgData.length > 0 && (
+                                        <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                                            {new Date(hgData[0].time * 1000).toLocaleDateString()} - {new Date(hgData[hgData.length - 1].time * 1000).toLocaleDateString()}
+                                        </span>
+                                    )}
+                                </div>
+                                <DataChart 
+                                    data={hgData} 
+                                    twaData={twaData} 
+                                    oshaTwaData={oshaTwaData} 
+                                />
+                            </div>
+                        </div>
+                    </main>
+
+                    {/* Modals */}
+                    {showAlarmModal && (
+                        <AlarmModal
+                            onClose={() => setShowAlarmModal(false)}
+                            onSave={handleSetAlarms}
+                            initialLow={currentAlarms.low}
+                            initialHigh={currentAlarms.high}
+                            initialTwa={currentAlarms.twa}
+                            loading={alarmLoading}
+                        />
+                    )}
+
+                    {showTimesyncModal && (
+                        <ConfirmModal
+                            title="Sync Device Time"
+                            message={`Sync device time to your computer's current time?\n\n${new Date().toLocaleString()}`}
+                            confirmText="Sync Time"
+                            onConfirm={handleTimesync}
+                            onCancel={() => setShowTimesyncModal(false)}
+                        />
+                    )}
+
+                    {showEraseModal && (
+                        <ConfirmModal
+                            title="Erase All Data"
+                            message={
+                                dataDownloaded
+                                    ? "Are you sure you want to erase all data from the device? This cannot be undone."
+                                    : "WARNING: Data has not been downloaded in this session. Are you sure you want to erase all data? This cannot be undone."
+                            }
+                            confirmText="Erase Data"
+                            danger={true}
+                            onConfirm={handleErase}
+                            onCancel={() => setShowEraseModal(false)}
+                        />
+                    )}
+
+                    {showWorkerModal && (
+                        <WorkerIdModal
+                            workers={cartridgeData.workers || {}}
+                            lastWorkerId={lastWorkerId}
+                            onConfirm={(workerId) => {
+                                setShowWorkerModal(false);
+                                if (workerId && pendingDataForWorker) {
+                                    assignDataToWorker(workerId, pendingDataForWorker);
+                                }
+                                setPendingDataForWorker(null);
+                            }}
+                            onCancel={() => {
+                                setShowWorkerModal(false);
+                                setPendingDataForWorker(null);
+                            }}
+                        />
+                    )}
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
